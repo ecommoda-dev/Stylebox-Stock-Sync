@@ -1,0 +1,36 @@
+# ⚠️ name لازم يطابق اسم الـ Worker في داشبورد Cloudflare حرف بحرف.
+#    لو اختلفوا، الـ build مش بيفشل — بينشر Worker جديد والأصلي بيتجمّد بصمت.
+
+name               = "stylebox-stock-sync-worker"
+main               = "index.js"
+compatibility_date = "2025-01-01"
+workers_dev        = true
+
+[observability]
+enabled = true
+
+# ─── D1 ──────────────────────────────────────────────
+# الـ binding دايمًا "DB" — أي اسم تاني والكتابة بتفشل بصمت.
+# الأداة دي بتستخدم جدولين في نفس القاعدة: logs (المشترك) و
+# wp_stock_sync_state (خاص بيها — ordering guard).
+[[d1_databases]]
+binding       = "DB"
+database_name = "ecommoda-dev-logs"
+database_id   = "90db62d3-bd7e-4d92-912b-10fc78eeb565"
+
+# ─── Vars (نص عادي — مش أسرار) ────────────────────────
+# دي بتتطبّق فعليًا مع Workers Builds (اتأكدنا 22-08-2026).
+# ⚠️ أي var مش مكتوبة هنا بتتمسح مع أول `wrangler deploy` — التلاتة
+#    دول لازم يفضلوا هنا بالكامل.
+[vars]
+SHOP_DOMAIN = "6c7e1a-53.myshopify.com"
+# 🔴 LOCATION_ID ليه fallback في الكود: `if (env.LOCATION_ID && ...)`.
+#    ضياعه ما بيرميش خطأ — بيلغي حارس الموقع بصمت، فأي حدث مخزون من أي
+#    موقع بيتزامن على WooCommerce من غير أي صف location_skipped يكشف ده.
+LOCATION_ID = "98849620290"
+WP_BASE_URL = "https://stylebox.online"
+
+# ⚠️ الأسرار مبتتكتبش هنا أبدًا:
+#    WORKER_SECRET · CLIENT_ID · CLIENT_SECRET · SHOPIFY_WEBHOOK_SECRET · WP_SYNC_SECRET
+#    Worker → Settings → Variables and Secrets → علّم Secret
+#    وبعدها: Deployments → Version History → ⋯ → Promote version
