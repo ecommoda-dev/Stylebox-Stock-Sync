@@ -1,3 +1,5 @@
+// EcomModa — Stylebox Stock Sync (Worker)
+// skills: worker-builder v3.0.0 · html-builder v7.0.0 · constants v2.0.0 · woocommerce-sync-helper v1.0.0 · shopify-graphql-helper v2.1.0 — 09-09-2026
 // ══════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════
 // §CONSTANTS
