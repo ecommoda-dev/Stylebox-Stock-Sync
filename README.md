@@ -18,19 +18,22 @@
 index.js       ← كود الـ Worker (مصدر النشر — Workers Builds)
 wrangler.toml  ← اسم الـ Worker + D1 binding + vars
 index.html     ← الواجهة (GitHub Pages)
-test.mjs       ← اختبارات مسار الويبهوك — `node test.mjs`
+test.mjs       ← اختبارات الـ Worker — `node test.mjs`
+check-html.mjs ← فحص بنية الواجهة — `node check-html.mjs`
 CLAUDE.md      ← قواعد الأداة وفخاخها — اقراه قبل أي تعديل
 ```
 
 ## الاختبارات
 
 ```
-node test.mjs
+node test.mjs        # الـ Worker: مسار الويبهوك كامل بـ D1 وشبكة مزيّفين
+node check-html.mjs  # الواجهة: بنية الـ CSS + الربط في الـ JS
 ```
 
 بلا أي تنصيب — مفيش dependencies ومفيش package.json (مقصود: إضافة واحد
-ممكن تغيّر سلوك Workers Builds). بيشغّل `fetch` بتاع الـ Worker الحقيقي
-بـ D1 وشبكة مزيّفين. **شغّله قبل أي push بيلمس `index.js`.**
+ممكن تغيّر سلوك Workers Builds).
+**شغّلهم قبل أي push** — الأول لأي تعديل في `index.js`، والتاني لأي تعديل
+في `index.html`.
 
 ## النشر
 
