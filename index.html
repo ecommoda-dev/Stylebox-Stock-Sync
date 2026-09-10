@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!-- skills: html-builder v7.0.0 · constants v2.0.0 — 09-09-2026 -->
+<!-- skills: html-builder v7.0.0 · constants v2.0.0 · shopify-webhook-helper v2.2.0 — 10-09-2026 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>سجل مزامنة استوك WordPress</title>
@@ -68,6 +68,8 @@ tbody tr:hover{background:var(--surface-2)}
 .badge.not_linked_yet{background:var(--surface-2);color:var(--text-secondary)}
 .badge.sku_mismatch,.badge.gtin_mismatch,.badge.wp_variation_not_found,.badge.variant_not_found,.badge.unexpected_error,.badge.wp_update_failed{background:var(--red-light);color:var(--red)}
 .badge.empty_payload_bug,.badge.location_skipped{background:var(--amber-light);color:var(--amber)}
+.badge.hmac_failed{background:var(--red-light);color:var(--red)}
+.badge.stale_event_skipped,.badge.no_triggered_at_header,.badge.login,.badge.logout{background:var(--surface-2);color:var(--text-secondary)}
 
 .pager{display:flex;justify-content:center;align-items:center;gap:10px;margin-top:12px;font-size:12px}
 .pager button{height:32px;padding:0 12px;border-radius:8px;border:1.5px solid var(--border-strong);background:var(--surface);cursor:pointer;font-family:inherit;font-weight:700}
@@ -140,6 +142,9 @@ tbody tr:hover{background:var(--surface-2)}
           <option value="wp_update_failed">❌ فشل تحديث WordPress</option>
           <option value="location_skipped">⚠️ location مختلف</option>
           <option value="empty_payload_bug">⚠️ Payload فاضي (بج Shopify)</option>
+          <option value="stale_event_skipped">⏭️ حدث قديم — اتخطى</option>
+          <option value="no_triggered_at_header">ℹ️ بلا حارس ترتيب</option>
+          <option value="hmac_failed">🔒 توقيع غلط (HMAC)</option>
           <option value="unexpected_error">⚠️ خطأ غير متوقع</option>
         </select>
       </div>
@@ -171,7 +176,7 @@ tbody tr:hover{background:var(--surface-2)}
       <h2>⚙️ إعدادات الاتصال</h2>
       <div class="field">
         <label>رابط الـ Worker</label>
-        <input type="text" id="cfgUrl" style="direction:ltr;font-family:var(--font-mono);font-size:12px" placeholder="https://wc-stock-sync-worker.....workers.dev">
+        <input type="text" id="cfgUrl" style="direction:ltr;font-family:var(--font-mono);font-size:12px" placeholder="https://stylebox-stock-sync-worker.ecommoda-dev.workers.dev">
       </div>
       <div class="field">
         <label>WORKER_SECRET</label>
@@ -189,8 +194,9 @@ tbody tr:hover{background:var(--surface-2)}
     <div class="modal" style="max-width:520px">
       <h2>ℹ️ عن الأداة</h2>
       <div style="font-size:13px;line-height:1.9">
-        <p><strong>الوظيفة:</strong> عرض سجل كل عملية مزامنة استوك تمّت (أو حاولت تتم) من Shopify إلى WordPress عن طريق <span class="mono" style="font-size:12px">wc-stock-sync-worker</span>.</p>
-        <p style="margin-top:8px"><strong>مصدر البيانات:</strong> webhook <span class="mono" style="font-size:12px">inventory_levels/update</span> من Shopify → Triple-Check (SKU + GTIN + WordPress Variation Id) → تحديث WooCommerce.</p>
+        <p><strong>الوظيفة:</strong> عرض سجل كل عملية مزامنة استوك تمّت (أو حاولت تتم) من Shopify إلى WordPress عن طريق <span class="mono" style="font-size:12px">stylebox-stock-sync-worker</span>.</p>
+        <p style="margin-top:8px"><strong>مصدر البيانات:</strong> webhook <span class="mono" style="font-size:12px">inventory_levels/update</span> مسجّل من <strong>Webhook Control Center</strong> (عبر الـ API، مش من داشبورد شوبيفاي) → Triple-Check (SKU + GTIN + WordPress Variation Id) → تحديث WooCommerce.</p>
+        <p style="margin-top:8px"><strong>إصدار الـ Worker الشغّال:</strong> <span class="mono" id="aboutVersion" style="font-size:12px">—</span></p>
         <p style="margin-top:8px"><strong>هذه الأداة قراءة فقط</strong> — مفيش أي تعديل استوك بيتم من هنا، بس عرض تاريخي.</p>
       </div>
       <div class="modal-actions"><button class="btn" id="btnCloseAbout">تمام</button></div>
@@ -241,11 +247,39 @@ async function apiCall(action, { method = 'GET', params = {}, body = null } = {}
 // ══════════════════════════════════════════════════════
 // §CAIRO TIME
 // ══════════════════════════════════════════════════════
-function toCairo(iso) { return new Date(new Date(iso).getTime() + 3 * 60 * 60 * 1000); }
+// 🔴 كان مكتوب هنا `+ 3 * 60 * 60 * 1000` — إزاحة ثابتة. يوم 29-10-2026
+// مصر بترجع UTC+2، وساعتها كل وقت في السجل كان هيغلط بساعة كاملة من غير
+// أي رسالة خطأ ومن غير أي طريقة تكتشفه من الشاشة. Intl بيحسب الإزاحة
+// الصح لكل تاريخ لوحده (صيفي وشتوي) — راجع ecommoda-constants §13.
+// اللغة en-US مقصودة رغم إن الواجهة عربي: هي اللي بتضمن إن dayPeriod
+// ترجع AM/PM بالظبط والأرقام لاتينية على أي متصفح. الترجمة لـ ص/م بتتعمل
+// هنا صراحةً — لو سِبناها للـ locale، نسخة ICU مختلفة ممكن ترجّع صيغة
+// تانية وتكسر السطر من غير ما حد ياخد باله.
+const CAIRO_FMT = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Africa/Cairo',
+  day: '2-digit', month: '2-digit',
+  hour: '2-digit', minute: '2-digit', hour12: true,
+});
+
 function formatDT(iso) {
-  const d = toCairo(iso), pad = n => String(n).padStart(2, '0');
-  let h = d.getUTCHours(); const ampm = h >= 12 ? 'م' : 'ص'; h = h % 12 || 12;
-  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth()+1)} ${pad(h)}:${pad(d.getUTCMinutes())}${ampm}`;
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const p = {};
+  for (const part of CAIRO_FMT.formatToParts(d)) p[part.type] = part.value;
+  const ampm = String(p.dayPeriod || '').toUpperCase() === 'PM' ? 'م' : 'ص';
+  return `${p.day}/${p.month} ${p.hour}:${p.minute}${ampm}`;
+}
+
+// ── §ESC ──
+// كل نص بييجي من D1 لازم يعدّي من هنا قبل innerHTML. الـ notes والـ sku
+// جايين أصلاً من قيم Shopify/WooCommerce — يعني نص مكتوب من برّه الأداة،
+// وSKU فيه `<` كان بيكسر الجدول أو أسوأ.
+function esc(v) {
+  if (v === null || v === undefined) return '';
+  return String(v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 const TYPE_LABELS = {
@@ -258,7 +292,12 @@ const TYPE_LABELS = {
   wp_update_failed: '❌ فشل التحديث',
   location_skipped: '⚠️ location مختلف',
   empty_payload_bug: '⚠️ Payload فاضي',
+  stale_event_skipped: '⏭️ حدث قديم — اتخطى',
+  no_triggered_at_header: 'ℹ️ بلا حارس ترتيب',
+  hmac_failed: '🔒 توقيع غلط',
   unexpected_error: '⚠️ خطأ غير متوقع',
+  login: '🔑 دخول',
+  logout: '🚪 خروج',
 };
 
 // ══════════════════════════════════════════════════════
@@ -269,7 +308,7 @@ async function loadEmployees() {
   try {
     const data = await apiCall('get_employees');
     sel.innerHTML = '<option value="">اختر...</option>' +
-      data.employees.map(e => `<option value="${e.username}">${e.display_name}</option>`).join('');
+      data.employees.map(e => `<option value="${esc(e.username)}">${esc(e.display_name)}</option>`).join('');
   } catch (e) {
     document.getElementById('loginMsg').textContent = 'تعذّر تحميل الموظفين — راجع الإعدادات';
   }
@@ -339,12 +378,12 @@ function renderLogs(entries) {
   empty.style.display = 'none';
   body.innerHTML = entries.map(e => `
     <tr>
-      <td class="mono">${formatDT(e.timestamp)}</td>
-      <td><span class="badge ${e.type}">${TYPE_LABELS[e.type] || e.type}</span></td>
-      <td class="mono">${e.sku || '—'}</td>
+      <td class="mono">${esc(formatDT(e.timestamp))}</td>
+      <td><span class="badge ${esc(e.type)}">${esc(TYPE_LABELS[e.type] || e.type)}</span></td>
+      <td class="mono">${esc(e.sku) || '—'}</td>
       <td class="mono">${e.value_before ?? '—'}</td>
       <td class="mono">${e.value_after ?? '—'}</td>
-      <td style="max-width:280px;white-space:normal">${e.notes || '—'}</td>
+      <td style="max-width:280px;white-space:normal">${esc(e.notes) || '—'}</td>
     </tr>
   `).join('');
 }
@@ -428,7 +467,22 @@ document.getElementById('btnSaveSettings').addEventListener('click', () => {
   if (isConfigured()) loadEmployees();
 });
 
-document.getElementById('btnAbout').addEventListener('click', () => document.getElementById('aboutModal').classList.remove('hidden'));
+// فتح «عن الأداة» بيسأل الـ Worker عن إصداره الحقيقي — الإثبات الوحيد
+// المتاح من الشاشة إن الكود المنشور هو الجديد فعلاً (فخ ٦ في CLAUDE.md).
+document.getElementById('btnAbout').addEventListener('click', async () => {
+  document.getElementById('aboutModal').classList.remove('hidden');
+  const el = document.getElementById('aboutVersion');
+  el.textContent = 'جاري القراءة...';
+  try {
+    const d = await apiCall('version');
+    const missing = Object.entries(d.env?.secretsPresent || {})
+      .filter(([k, v]) => !v && k !== 'SHOPIFY_WEBHOOK_SECRET')
+      .map(([k]) => k);
+    el.textContent = `v${d.version} · ${d.tool}` + (missing.length ? ` — ⚠️ أسرار ناقصة: ${missing.join(', ')}` : '');
+  } catch (e) {
+    el.textContent = 'تعذّر القراءة — ' + (e.message || '');
+  }
+});
 document.getElementById('btnCloseAbout').addEventListener('click', () => document.getElementById('aboutModal').classList.add('hidden'));
 
 // ══════════════════════════════════════════════════════
