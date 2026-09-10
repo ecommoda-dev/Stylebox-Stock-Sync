@@ -32,6 +32,17 @@ LOCATION_ID = "98849620290"
 WP_BASE_URL = "https://stylebox.online"
 
 # ⚠️ الأسرار مبتتكتبش هنا أبدًا:
-#    WORKER_SECRET · CLIENT_ID · CLIENT_SECRET · SHOPIFY_WEBHOOK_SECRET · WP_SYNC_SECRET
+#    WORKER_SECRET · CLIENT_ID · CLIENT_SECRET · WP_SYNC_SECRET
 #    Worker → Settings → Variables and Secrets → علّم Secret
 #    وبعدها: Deployments → Version History → ⋯ → Promote version
+#
+# 🔴 سر توقيع الويبهوك اتغيّر مع النقل (10-09-2026):
+#    الاشتراك بقى معمول بالـ API من Webhook Control Center، والاشتراكات
+#    المعمولة بالـ API بتتوقّع بـ **CLIENT_SECRET** (سر التطبيق) مش بالـ
+#    store-level secret بتاع الداشبورد. يعني CLIENT_SECRET بقى سر حرج
+#    للويبهوك نفسه مش بس للـ OAuth — غيابه = كل تسليمة 401 والاستوك واقف.
+#
+#    SHOPIFY_WEBHOOK_SECRET = **قديم، انتقالي**. الكود لسه بيقبله عشان أي
+#    تسليمة متأخرة من الاشتراك القديم ما تضيعش أثناء النقل. يتحذف من
+#    الداشبورد ومن WEBHOOK_SECRET_VARS في index.js بعد ما السجل يثبت إن
+#    كل التسليمات بقت signedWith=CLIENT_SECRET — راجع CLAUDE.md.
