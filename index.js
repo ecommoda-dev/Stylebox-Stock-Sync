@@ -5,7 +5,9 @@
 // §CONSTANTS
 // ══════════════════════════════════════════════════════
 const TOOL_NAME = 'wp_stock_sync';
-const TOOL_VERSION = '2.0.0';
+const TOOL_VERSION = '3.0.0';
+const LOG_EXPORT_MAX = 2000;   // سقف التصدير — بيرجع للواجهة كـ `cap` عشان
+                               // تعرف إن الملف اتقص بدل ما تقول «تم ✓» على ناقص
 const API_VERSION = '2026-01';
 
 // الاشتراك اتنقل من ويبهوك داشبورد شوبيفاي (Settings → Notifications) إلى
@@ -185,39 +187,78 @@ async function writeLog(db, entry) {
   ).run();
 }
 
-async function getLogs(db, { tool = null, employee = null, type = null, search = null, limit = 100, offset = 0 } = {}) {
-  let sql = "SELECT * FROM logs WHERE type NOT IN ('login','logout')";
+// ── امتداد محلي على الكتلة المشتركة (10-09-2026) ──
+// الأصل كان بياخد `employee` و`type` **قيمة واحدة** لكل واحد. معيار الجداول
+// (data-table-standard بند ٢١) بيفرض إن كل فلاتر أي جدول تبقى اختيار متعدد،
+// والسجل جدول — فالقيمة الواحدة كانت بتخلي المعيار مستحيل التنفيذ، وبتدفع
+// ناحية الفلترة في المتصفح: صف «النتائج» بيعدّ الصفحة مش القاعدة، والصفحة
+// التانية بتيجي بلا فلترة، والتصدير بينزّل غير المفلتر — كله في السكوت.
+// الأسماء المفردة لسه مقبولة للتوافق الرجعي.
+function buildLogFilterSQL(select, {
+  tool      = null,
+  employee  = null, employees = null,
+  type      = null, types     = null,
+  search    = null,
+  dateFrom  = null, dateTo    = null,
+} = {}) {
+  let sql = `${select} FROM logs WHERE type NOT IN ('login','logout')`;
   const b = [];
+
+  const emps = Array.isArray(employees) && employees.length ? employees : (employee ? [employee] : []);
+  const typs = Array.isArray(types)     && types.length     ? types     : (type     ? [type]     : []);
+
   if (tool) { sql += ' AND tool = ?'; b.push(tool); }
-  if (employee) { sql += ' AND employee = ?'; b.push(employee); }
-  if (type) { sql += ' AND type = ?'; b.push(type); }
+  if (emps.length) { sql += ` AND employee IN (${emps.map(() => '?').join(',')})`; b.push(...emps); }
+  if (typs.length) { sql += ` AND type IN (${typs.map(() => '?').join(',')})`;     b.push(...typs); }
   if (search) { sql += ' AND (sku LIKE ? OR notes LIKE ?)'; b.push(`%${search}%`, `%${search}%`); }
-  sql += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
-  b.push(Math.min(limit, 100), offset);
-  return (await db.prepare(sql).bind(...b).all()).results;
+  // ⚠️ المقارنة على أول ١٠ حروف من timestamp — يعني بتاريخ **UTC** المخزّن،
+  // بينما العرض بتوقيت القاهرة. فرق الساعتين/التلاتة ممكن يحط عملية بعد ٩
+  // مساءً بالقاهرة في يوم UTC اللي بعده. مقبول لفلتر بالأيام — بس مكتوب.
+  if (dateFrom) { sql += ' AND substr(timestamp, 1, 10) >= ?'; b.push(dateFrom); }
+  if (dateTo)   { sql += ' AND substr(timestamp, 1, 10) <= ?'; b.push(dateTo); }
+
+  return { sql, b };
 }
 
-async function getLogsCount(db, { tool = null, employee = null, type = null, search = null } = {}) {
-  let sql = "SELECT COUNT(*) as total FROM logs WHERE type NOT IN ('login','logout')";
-  const b = [];
-  if (tool) { sql += ' AND tool = ?'; b.push(tool); }
-  if (employee) { sql += ' AND employee = ?'; b.push(employee); }
-  if (type) { sql += ' AND type = ?'; b.push(type); }
-  if (search) { sql += ' AND (sku LIKE ? OR notes LIKE ?)'; b.push(`%${search}%`, `%${search}%`); }
+async function getLogs(db, { limit = 100, offset = 0, ...filters } = {}) {
+  const { sql, b } = buildLogFilterSQL('SELECT *', filters);
+  const q = sql + ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+  return (await db.prepare(q)
+    .bind(...b, Math.min(Number(limit) || 100, 100), Math.max(Number(offset) || 0, 0)).all()).results;
+}
+
+async function getLogsCount(db, filters = {}) {
+  const { sql, b } = buildLogFilterSQL('SELECT COUNT(*) as total', filters);
   const row = await db.prepare(sql).bind(...b).first();
   return row?.total ?? 0;
 }
 
-async function getLogsExport(db, { tool = null, employee = null, type = null, search = null } = {}) {
-  let sql = "SELECT * FROM logs WHERE type NOT IN ('login','logout')";
-  const b = [];
-  if (tool) { sql += ' AND tool = ?'; b.push(tool); }
-  if (employee) { sql += ' AND employee = ?'; b.push(employee); }
-  if (type) { sql += ' AND type = ?'; b.push(type); }
-  if (search) { sql += ' AND (sku LIKE ? OR notes LIKE ?)'; b.push(`%${search}%`, `%${search}%`); }
-  sql += ' ORDER BY timestamp DESC LIMIT 2000';
-  return (await db.prepare(sql).bind(...b).all()).results;
+async function getLogsExport(db, filters = {}) {
+  const { sql, b } = buildLogFilterSQL('SELECT *', filters);
+  const q = sql + ' ORDER BY timestamp DESC LIMIT ?';
+  return (await db.prepare(q).bind(...b, LOG_EXPORT_MAX).all()).results;
 }
+
+// ── §HELPERS::logParamsFrom ──
+// بيقرا فلاتر السجل من الـ query string — CSV للقوايم (types=synced,sku_mismatch).
+// ⚠️ الفاصل فاصلة في الطرفين. قيم الـ type هنا كلها مفاتيح إنجليزية بلا فواصل،
+// فمفيش خطر انقسام — لو اتضاف نوع فيه فاصلة يومًا ما لازم الفاصل يتغيّر في
+// الواجهة والـ Worker **مع بعض**.
+function logParamsFrom(url, tool) {
+  const csv = (k) => (url.searchParams.get(k) || '').split(',').map(v => v.trim()).filter(Boolean);
+  const employees = csv('employees'), types = csv('types');
+  return {
+    tool,
+    employees: employees.length ? employees : null,
+    employee:  url.searchParams.get('employee') || null,
+    types:     types.length ? types : null,
+    type:      url.searchParams.get('type')     || null,
+    search:    url.searchParams.get('search')   || null,
+    dateFrom:  url.searchParams.get('dateFrom') || null,
+    dateTo:    url.searchParams.get('dateTo')   || null,
+  };
+}
+
 // ══════════════════════════════════════════════════════
 // END SHARED BLOCK
 // ══════════════════════════════════════════════════════
@@ -506,11 +547,12 @@ export default {
       // الجديد اتنشر فعلاً. الـ endpoint ده هو الإثبات: بيرجّع رقم إصدار
       // الكود اللي شغّال دلوقتي + هل الأسرار موجودة (بالوجود بس، من غير
       // أي قيمة) — يعني «السر ناقص» بقى مقروء من غير ما ننتظر تسليمة تفشل.
-      if (action === 'version') {
+      if (action === 'get_config' || action === 'version') {
         return json({
           ok: true,
           tool: TOOL_NAME,
           version: TOOL_VERSION,
+          logExportMax: LOG_EXPORT_MAX,
           apiVersion: API_VERSION,
           webhookPath: '/webhook',
           env: {
@@ -538,9 +580,7 @@ export default {
       // ─── §LOG-ENDPOINTS ───────────────────────────────────
       if (action === 'get_logs') {
         const entries = await getLogs(env.DB, {
-          tool: TOOL_NAME,
-          type: url.searchParams.get('type') || null,
-          search: url.searchParams.get('search') || null,
+          ...logParamsFrom(url, TOOL_NAME),
           limit: parseInt(url.searchParams.get('limit') || '100'),
           offset: parseInt(url.searchParams.get('offset') || '0'),
         });
@@ -548,21 +588,74 @@ export default {
       }
 
       if (action === 'get_logs_count') {
-        const total = await getLogsCount(env.DB, {
-          tool: TOOL_NAME,
-          type: url.searchParams.get('type') || null,
-          search: url.searchParams.get('search') || null,
-        });
+        const total = await getLogsCount(env.DB, logParamsFrom(url, TOOL_NAME));
         return json({ ok: true, total }, 200, request);
       }
 
       if (action === 'get_logs_export') {
-        const entries = await getLogsExport(env.DB, {
-          tool: TOOL_NAME,
-          type: url.searchParams.get('type') || null,
-          search: url.searchParams.get('search') || null,
-        });
-        return json({ ok: true, entries }, 200, request);
+        // العدّ الحقيقي جنب الصفوف — عشان الواجهة تقدر تقول «٢٠٠٠ من أصل ٣٥٠٠»
+        // بدل ما تقول «تم تصدير ٢٠٠٠ ✓» على ملف مقصوص.
+        const params = logParamsFrom(url, TOOL_NAME);
+        const [entries, total] = await Promise.all([
+          getLogsExport(env.DB, params),
+          getLogsCount(env.DB, params),
+        ]);
+        return json({
+          ok: true, entries,
+          cap: LOG_EXPORT_MAX,
+          total,
+          truncated: total > LOG_EXPORT_MAX,
+        }, 200, request);
+      }
+
+      // ─── §STATS ───────────────────────────────────────────
+      // الأداة مالهاش شاشة تشغيل، فـ«شغّالة» و«واقفة» شكلهم واحد. الـ endpoint
+      // ده بيفصل السؤالين اللي كانوا بيتخلطوا:
+      //   lastEventAt  — آخر تسليمة ويبهوك وصلت (أي نوع) ⇒ الاستقبال حيّ؟
+      //   lastSyncedAt — آخر مزامنة تمّت فعلًا          ⇒ الكتابة شغّالة؟
+      // الاتنين اتفرقوا فعليًا يوم 09-09-2026: التسليمات فضلت واصلة والمزامنة
+      // وقفت، وفضل الفرق مخفي يوم كامل لأن مفيش حاجة على الشاشة بتقيسه.
+      if (action === 'get_stats') {
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const [lastSynced, lastEvent, breakdown] = await Promise.all([
+          env.DB.prepare(
+            "SELECT MAX(timestamp) AS ts FROM logs WHERE tool = ? AND type = 'synced'"
+          ).bind(TOOL_NAME).first(),
+          env.DB.prepare(
+            "SELECT MAX(timestamp) AS ts FROM logs WHERE tool = ? AND type NOT IN ('login','logout')"
+          ).bind(TOOL_NAME).first(),
+          env.DB.prepare(
+            `SELECT type, COUNT(*) AS n FROM logs
+             WHERE tool = ? AND type NOT IN ('login','logout') AND timestamp >= ?
+             GROUP BY type`
+          ).bind(TOOL_NAME, since).all(),
+        ]);
+
+        const rows = breakdown.results || [];
+        // «فشل» = اللي وقف عملية مزامنة كانت مفروض تتم. الأنواع المحايدة
+        // (not_linked_yet · stale_event_skipped · no_triggered_at_header ·
+        // location_skipped) **مش** فشل — عدّها فشل بيخلي أكتر رقم على الشاشة
+        // أقله إفادة، والموظف بيتعلّم يتجاهل الأحمر كله.
+        const FAILURE_TYPES = new Set([
+          'sku_mismatch', 'gtin_mismatch', 'wp_variation_not_found', 'variant_not_found',
+          'wp_update_failed', 'empty_payload_bug', 'hmac_failed', 'unexpected_error',
+        ]);
+        let total = 0, synced = 0, failed = 0;
+        const byType = {};
+        for (const r of rows) {
+          const n = r.n || 0;
+          byType[r.type] = n;
+          total += n;
+          if (r.type === 'synced') synced += n;
+          else if (FAILURE_TYPES.has(r.type)) failed += n;
+        }
+
+        return json({
+          ok: true,
+          lastSyncedAt: lastSynced?.ts || null,
+          lastEventAt:  lastEvent?.ts  || null,
+          last24h: { total, synced, failed, byType },
+        }, 200, request);
       }
       // ──────────────────────────────────────────────────────
 
