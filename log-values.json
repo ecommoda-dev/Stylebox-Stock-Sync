@@ -1,0 +1,81 @@
+{
+  "tool": "wp_stock_sync",
+  "since": null,
+  "types": {
+    "login": {
+      "result": null,
+      "stage": null,
+      "desc": "دخول موظف"
+    },
+    "logout": {
+      "result": null,
+      "stage": null,
+      "desc": "خروج موظف"
+    },
+    "empty_payload_bug": {
+      "result": null,
+      "stage": null,
+      "desc": "Payload فاضي أو available غير صالحة من Shopify (بج API 2026-01)"
+    },
+    "gtin_mismatch": {
+      "result": null,
+      "stage": null,
+      "desc": "GTIN على ووردبريس لا يطابق Variant ID"
+    },
+    "hmac_failed": {
+      "result": null,
+      "stage": null,
+      "desc": "فشل التحقق من HMAC — CLIENT_SECRET والقديم ما طابقوش"
+    },
+    "location_skipped": {
+      "result": null,
+      "stage": null,
+      "desc": "location_id مختلف عن LOCATION_ID المتوقع"
+    },
+    "no_triggered_at_header": {
+      "result": null,
+      "stage": null,
+      "desc": "X-Shopify-Triggered-At ناقص — اتنفّذ من غير ordering guard"
+    },
+    "not_linked_yet": {
+      "result": null,
+      "stage": null,
+      "desc": "الـ variant لسه من غير WordPress Variation Id metafield"
+    },
+    "sku_mismatch": {
+      "result": null,
+      "stage": null,
+      "desc": "SKU مختلف بين شوبيفاي وووردبريس"
+    },
+    "stale_event_skipped": {
+      "result": null,
+      "stage": null,
+      "desc": "حدث أقدم من آخر حدث اتعالج لنفس الـ variant — اتجاهل"
+    },
+    "synced": {
+      "result": null,
+      "stage": null,
+      "desc": "الاستوك اتكتب على ووكومرس"
+    },
+    "unexpected_error": {
+      "result": null,
+      "stage": null,
+      "desc": "استثناء غير متوقع أثناء معالجة الويبهوك"
+    },
+    "variant_not_found": {
+      "result": null,
+      "stage": null,
+      "desc": "مفيش variant مرتبط بالـ inventory_item_id على شوبيفاي"
+    },
+    "wp_update_failed": {
+      "result": null,
+      "stage": null,
+      "desc": "نداء تحديث ووردبريس فشل"
+    },
+    "wp_variation_not_found": {
+      "result": null,
+      "stage": null,
+      "desc": "WordPress Variation Id مش موجود على ووردبريس"
+    }
+  }
+}
