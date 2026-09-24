@@ -330,14 +330,14 @@ index.html نفس الـ blob SHA بتاع Index.html القديم في commit e
 
 | المهارة | الإصدار وقت آخر تعديل |
 |---|---|
-| ecommoda-worker-builder | v3.0.0 |
-| ecommoda-constants | v2.0.0 |
+| ecommoda-worker-builder | v3.8.0 |
+| ecommoda-constants | v3.1.0 |
 | woocommerce-sync-helper | v1.0.0 |
 | shopify-graphql-helper | v2.1.0 |
 | shopify-webhook-helper | v2.2.0 |
 | ecommoda-html-builder | v7.0.0 |
 
-آخر مطابقة: 10-09-2026 · `index.js` v3.0.0 · `index.html` v2.0.0
+آخر مطابقة: 24-09-2026 · `index.js` v3.0.1 · `index.html` v2.0.0
 
 ✅ **اتقفلت 10-09-2026:**
 - **`ecommoda-html-builder` — الواجهة كلها.** كانت متأخرة عن المعيار بجيل
@@ -351,6 +351,19 @@ index.html نفس الـ blob SHA بتاع Index.html القديم في commit e
 - **`ecommoda-html-builder` — قاعدة `esc()` قبل `innerHTML`.** `notes`
   و`sku` بيتحطوا في الجدول من D1، وقيمهم أصلاً جاية من Shopify/WooCommerce
   (نص من برّه الأداة). بقى فيه `esc()` على كل قيمة.
+
+✅ **اتقفلت 24-09-2026:**
+- **`check-log-values.mjs` اتستبدل بالنسخة المصلَّحة (Step 7 في
+  `ecommoda-worker-builder`).** النسخة القديمة كانت بتدوّر على `type:`
+  بنقطتين بس، فـ object shorthand (`{ tool, type }`) كان بيعدّي في صمت.
+  التشغيل بالنسخة الجديدة على `log-values.json` الحالي رجّع **exit 0** من
+  أول تشغيل — الـ١٥ قيمة كلهم مسجّلين فعلًا ومفيش قيم ديناميكية ولا
+  `blindSpans`.
+- **الطبقة ٥ — الحارس الديناميكي لقيم اللوج (Step 7-ج).** `LOG_REGISTRY`
+  اتبنى من `log-values.json` (مفتاحه `wp_stock_sync` بالـ١٥ قيمة)، واتحط
+  جوّه `writeLog` (الأنكور الوحيد في الملف). أي قيمة `(tool, type)` مش
+  مسجّلة بتتكتب عادي + `extra._unregistered = true` + UPSERT صامت في
+  `log_value_alerts` **بعد** الكتابة — مفيش رفض كتابة أبدًا.
 
 🔴 معلّقة:
 - **عشر قيم `type` غير مسجّلة في `ecommoda-constants` §7** (فوق) — مخالفة
@@ -431,4 +444,4 @@ index.html نفس الـ blob SHA بتاع Index.html القديم في commit e
   قرار منتج. لو اتقرر يتعمل، لازم يتوثّق في العقد ده الأول.
 - **إعادة تسمية الـ Worker** مؤجَّلة بقرار المشروع (§1 قرار ٦).
 
-آخر تحديث: 10-09-2026
+آخر تحديث: 24-09-2026

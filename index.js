@@ -1,11 +1,11 @@
 // EcomModa — Stylebox Stock Sync (Worker)
-// skills: worker-builder v3.0.0 · html-builder v7.0.0 · constants v2.0.0 · woocommerce-sync-helper v1.0.0 · shopify-graphql-helper v2.1.0 · shopify-webhook-helper v2.2.0 — 10-09-2026
+// skills: worker-builder v3.8.0 · html-builder v7.0.0 · constants v3.1.0 · woocommerce-sync-helper v1.0.0 · shopify-graphql-helper v2.1.0 · shopify-webhook-helper v2.2.0 — 24-09-2026
 // ══════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════
 // §CONSTANTS
 // ══════════════════════════════════════════════════════
 const TOOL_NAME = 'wp_stock_sync';
-const TOOL_VERSION = '3.0.0';
+const TOOL_VERSION = '3.0.1';
 const LOG_EXPORT_MAX = 2000;   // سقف التصدير — بيرجع للواجهة كـ `cap` عشان
                                // تعرف إن الملف اتقص بدل ما تقول «تم ✓» على ناقص
 const API_VERSION = '2026-01';
@@ -21,6 +21,66 @@ const API_VERSION = '2026-01';
 // لمدة يوم كامل، يتشال 'SHOPIFY_WEBHOOK_SECRET' من الليستة دي ويتحذف السر
 // من الداشبورد — راجع «إسقاط السر القديم» في CLAUDE.md.
 const WEBHOOK_SECRET_VARS = ['CLIENT_SECRET', 'SHOPIFY_WEBHOOK_SECRET'];
+
+// ════════════════════════════════════════════════════════════
+// §LOG-REG — الحارس الديناميكي لقيم اللوج (الطبقة ٥)
+// ════════════════════════════════════════════════════════════
+// قطعة الأداة دي بس من log-values.json اللي جنبها — بتتحدّث معاه في نفس
+// الـ commit. مفتاحه الزوج (tool, type) مش type لوحده، عشان أي أداة تانية
+// بتكتب تحت tool مختلف (مفيش حالة كده هنا — كل قيم الأداة دي تحت
+// wp_stock_sync بس، حقل tool مالوش أي override في log-values.json).
+const LOG_REGISTRY = {
+  wp_stock_sync: new Set([
+    'login', 'logout', 'empty_payload_bug', 'gtin_mismatch', 'hmac_failed',
+    'location_skipped', 'no_triggered_at_header', 'not_linked_yet',
+    'sku_mismatch', 'stale_event_skipped', 'synced', 'unexpected_error',
+    'variant_not_found', 'wp_update_failed', 'wp_variation_not_found',
+  ]),
+};
+
+const isRegisteredLogValue = (tool, type) => !!LOG_REGISTRY[tool]?.has(type);
+
+// UPSERT على (source_tool, tool, type) — صف واحد لكل قيمة، hits بيعدّ.
+// الحدث الكامل مش بيضيع: الصف الأصلي موجود في logs وعليه _unregistered،
+// والجدول ده فهرس مش سجل تاني — عشان كده dedupe مش صف لكل حدث.
+const LOG_ALERT_SQL = `
+  INSERT INTO log_value_alerts
+    (source_tool, tool, type, first_seen, last_seen, hits,
+     worker_version, sample_order_name, sample_employee, sample_notes)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(source_tool, tool, type) DO UPDATE SET
+    last_seen         = excluded.last_seen,
+    hits              = log_value_alerts.hits + excluded.hits,
+    worker_version    = excluded.worker_version,
+    sample_order_name = excluded.sample_order_name,
+    sample_employee   = excluded.sample_employee,
+    sample_notes      = excluded.sample_notes,
+    status            = CASE WHEN log_value_alerts.status = 'ignored'
+                             THEN 'ignored' ELSE 'open' END
+`;
+
+// فشل التنبيه ممنوع يأثر على أي حاجة — try/catch صامت. بتجمّع التكرار
+// جوّه نفس الدفعة في صف واحد (hits) قبل ما تكتب.
+async function noteUnregisteredLogValues(db, entries) {
+  const byPair = new Map();
+  for (const e of entries) {
+    const key = `${e.tool}\u0000${e.type}`;
+    const acc = byPair.get(key);
+    if (acc) { acc.hits++; continue; }
+    byPair.set(key, { entry: e, hits: 1 });
+  }
+  const now = new Date().toISOString();
+  for (const { entry, hits } of byPair.values()) {
+    try {
+      await db.prepare(LOG_ALERT_SQL).bind(
+        TOOL_NAME, entry.tool ?? '(بدون tool)', entry.type ?? '(بدون type)',
+        now, now, hits, TOOL_VERSION,
+        entry.orderName ?? null, entry.employee ?? null,
+        entry.notes ? String(entry.notes).slice(0, 200) : null,
+      ).run();
+    } catch (e) { /* متعمّد: التنبيه فهرس، وفشله أهون من تعطيل الأداة */ }
+  }
+}
 
 // ══════════════════════════════════════════════════════
 // §CORS — Option B (write tool, strict allowlist)
@@ -164,7 +224,15 @@ async function registerPin(db, username, pin) {
   return true;
 }
 
+// ⚠️ خروج عن «copy verbatim» بقصد — الحارس الديناميكي (§LOG-REG، Step 7-ج
+// في ecommoda-worker-builder) لازم يتحط جوّه writeLog نفسها. مفيش رفض كتابة
+// أبدًا: الصف بيتكتب عادي والتنبيه بيتبعت بعده، جوّه try/catch صامت.
 async function writeLog(db, entry) {
+  const unregistered = !isRegisteredLogValue(entry.tool, entry.type);
+  const extra = unregistered
+    ? { ...(entry.extra || {}), _unregistered: true }
+    : entry.extra;
+
   await db.prepare(`
     INSERT INTO logs
       (timestamp, tool, type, employee, order_id, order_name,
@@ -183,8 +251,10 @@ async function writeLog(db, entry) {
     entry.valueBefore ?? null,
     entry.valueAfter ?? null,
     entry.notes ?? null,
-    entry.extra ? JSON.stringify(entry.extra) : null
+    extra ? JSON.stringify(extra) : null
   ).run();
+
+  if (unregistered) await noteUnregisteredLogValues(db, [entry]);
 }
 
 // ── امتداد محلي على الكتلة المشتركة (10-09-2026) ──
