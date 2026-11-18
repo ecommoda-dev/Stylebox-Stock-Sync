@@ -1,5 +1,5 @@
 // EcomModa — Stylebox Stock Sync · اختبارات مسار الويبهوك
-// skills: worker-builder v3.0.0 · shopify-webhook-helper v2.2.0 — 10-09-2026
+// skills: worker-builder v4.0.0 · shopify-webhook-helper v1.0.0 — 18-11-2026
 //
 // التشغيل:  node test.mjs        (بلا أي تنصيب — مفيش dependencies خالص)
 //
@@ -140,7 +140,7 @@ globalThis.fetch = async (url, opts = {}) => {
     net.oauthCalls = (net.oauthCalls || 0) + 1;
     return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 });
   }
-  if (u.includes('/graphql.json')) return net.gql();
+  if (u.includes('/graphql.json')) { net.lastGqlUrl = u; return net.gql(); }
   if (u.includes('/variation-stock/')) {
     if (opts.method === 'POST') { net.wpPost = JSON.parse(opts.body); return net.wpUpdate(); }
     return net.wpGet();
@@ -390,6 +390,56 @@ suite('١٥. حساب توقيت القاهرة (ecommoda-constants §13)');
   check('شتاءً: القيمة الصح UTC+2', fmt(winter) === '15/12 03:05م', fmt(winter));
   check('منتصف الليل بيتعرض 12 ص', fmt('2026-12-15T22:05:00Z') === '16/12 12:05ص',
         fmt('2026-12-15T22:05:00Z'));
+}
+
+suite('١٦. مواءمة 18-11-2026 — API 2026-10 · THROTTLED · ترتيب السجل · diag · حارس السر');
+{
+  // ① الإصدار
+  net = healthyNet();
+  await post(PAYLOAD, { headers: { 'X-Shopify-Triggered-At': '2026-09-10T12:00:00.000001Z' } });
+  check('الـ GraphQL بيروح على 2026-10', /\/api\/2026-10\/graphql\.json/.test(net.lastGqlUrl || ''), net.lastGqlUrl);
+
+  // ② THROTTLED مرة واحدة → إعادة محاولة وبعدين نجاح (الميزانية مشتركة بين الـ Workers)
+  let n = 0;
+  net = healthyNet();
+  net.gql = () => (++n === 1)
+    ? new Response(JSON.stringify({ errors: [{ message: 'Throttled', extensions: { code: 'THROTTLED' } }] }), { status: 200 })
+    : variantFound();
+  const db = makeDB();
+  await post(PAYLOAD, { db, headers: { 'X-Shopify-Triggered-At': '2026-09-10T12:01:00.000001Z' } });
+  check('THROTTLED بيتعاد مرة بدل ما يفشل المزامنة', n === 2 && db.logs.some(l => l.type === 'synced'), `نداءات=${n} · ${db.logs.map(l => l.type)}`);
+
+  // ③ حارس السر الغايب: 500 مش مرور (Bearer undefined)
+  const w = (await import('./index.js')).default;
+  const r1 = await w.fetch(new Request('https://w/?action=get_config', { headers: { Authorization: 'Bearer undefined' } }),
+    { ...ENV, DB: makeDB(), WORKER_SECRET: undefined }, ctx);
+  check('WORKER_SECRET غايب ⇒ 500 مش دخول', r1.status === 500, `status=${r1.status}`);
+
+  // ④ diag — مصفوفة [{ok,label,detail}] ومفيش قيمة سر
+  net = healthyNet();
+  net.gql = () => new Response(JSON.stringify({
+    data: { currentAppInstallation: { accessScopes: [{ handle: 'read_inventory' }, { handle: 'read_products' }] } },
+    extensions: { cost: { requestedQueryCost: 2, actualQueryCost: 2, throttleStatus: { currentlyAvailable: 998, maximumAvailable: 1000, restoreRate: 50 } } },
+  }), { status: 200 });
+  net.wpGet = () => new Response(JSON.stringify({ code: 'ec_not_found' }), { status: 404 });
+  const dres = await w.fetch(new Request('https://w/?action=diag', { headers: { Authorization: 'Bearer worker-secret' } }),
+    { ...ENV, DB: makeDB() }, ctx);
+  const dj = await dres.json();
+  const dump = JSON.stringify(dj);
+  check('diag: مصفوفة checks فيها OAuth + actualQueryCost + read_all_orders',
+    Array.isArray(dj.checks) && ['Shopify OAuth', 'actualQueryCost', 'read_all_orders'].every(l => dj.checks.some(c => c.label === l)), dump.slice(0, 200));
+  check('diag: ولا قيمة سر في الرد', !['worker-secret', 'app-secret', 'client-id', 'wp-secret', 'store-secret'].some(v => dump.includes(v)));
+
+  // ⑤ الترتيب على السيرفر: قائمة بيضاء + كاسر تعادل + قيمة غريبة بترجع للافتراضي
+  const sqls = [];
+  const spyDB = { prepare(sql) { sqls.push(sql); const a = { bind() { return a; }, async all() { return { results: [] }; }, async first() { return null; }, async run() { return { meta: { changes: 0 } }; } }; return a; } };
+  const get = (q) => w.fetch(new Request('https://w/?action=get_logs' + q, { headers: { Authorization: 'Bearer worker-secret' } }), { ...ENV, DB: spyDB }, ctx);
+  await get('&sortBy=delta&sortDir=asc');
+  check('ORDER BY delta ASC + كاسر تعادل', sqls.some(q => /ORDER BY delta ASC, timestamp DESC/.test(q)), sqls.join(' | '));
+  sqls.length = 0; await get("&sortBy=sku;DROP TABLE logs&sortDir=asc");
+  check('قيمة sortBy غريبة ⇒ الافتراضي (مفيش حقن)', sqls.some(q => /ORDER BY timestamp (ASC|DESC) LIMIT/.test(q)) && !sqls.some(q => /DROP/.test(q)), sqls.join(' | '));
+  sqls.length = 0; await get('&limit=abc&offset=zzz');
+  check('limit/offset غير رقمي ⇒ مش NaN', sqls.length > 0);
 }
 
 // ══════════════════════════════════════════════════════

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!-- skills: html-builder v7.0.0 · worker-builder v3.0.0 · constants v2.0.0 · shopify-webhook-helper v2.2.0 · woocommerce-sync-helper v1.0.0 — 10-09-2026 -->
+<!-- skills: html-builder v9.1.0 · worker-builder v4.0.0 · constants v6.0.0 · shopify-webhook-helper v1.0.0 · woocommerce-sync-helper v2.1.0 — 18-11-2026 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>سجل مزامنة استوك WordPress — EcomModa</title>
@@ -22,8 +22,8 @@
   --border:             #e5e7eb;
   --border-strong:      #d1d5db;
   --text-primary:       #111827;
-  --text-secondary:     #6b7280;
-  --text-muted:         #6b7280;
+  --text-secondary:     #4b5563;
+  --text-muted:         #4b5563;
   --on-accent:          #ffffff;
   --accent:             #2563eb;
   --accent-light:       #eff6ff;
@@ -394,6 +394,28 @@ body {
   transition: background .15s, border-color .15s; }
 .page-btn:hover:not(:disabled) { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
 .page-btn:disabled { opacity: .4; cursor: not-allowed; }
+/* ── Idle logout (§IDLE-JS) — banner + login notice ────────── */
+.idle-warn {
+  display: none; position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 9000;               /* فوق كل الـ modals (600) وتحت الـ toast — rule 17 */
+  width: min(92vw, 440px);
+  background: var(--amber-light); border: 1px solid var(--amber-border); color: var(--amber-dark);
+  border-radius: 12px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.18);
+  text-align: center; line-height: 1.7; font-weight: 800; font-size: 13px;
+}
+.idle-warn.visible { display: block; }
+.idle-warn .idle-ask { font-weight: 900; font-size: 14px; }
+.idle-warn button {
+  margin-top: 8px; min-height: 44px; padding: 0 22px; border: none; border-radius: 10px;
+  background: var(--accent); color: var(--on-accent);
+  font-family: var(--font-body); font-size: 14px; font-weight: 900; cursor: pointer;
+}
+.login-notice {
+  display: none; border-radius: 10px; border: 1px solid var(--amber-border);
+  background: var(--amber-light); color: var(--amber-dark);
+  padding: 9px 12px; font-size: 12px; font-weight: 800; text-align: center; line-height: 1.6;
+}
+.login-notice.visible { display: block; }
 </style>
 </head>
 <body>
@@ -597,6 +619,11 @@ body {
             السر ده هو الحاجة الوحيدة اللي بتتخزّن على الجهاز.
           </span>
         </div>
+        <div class="settings-field" style="border-top:1.5px solid var(--border);padding-top:12px;">
+          <label class="settings-label">فحص النظام</label>
+          <button class="btn-modal-cancel" id="diagBtn" onclick="runDiag()">🩺 افحص الأداة والاتصالات</button>
+          <div id="diagResult" style="margin-top:10px;font-size:12px;line-height:1.7;"></div>
+        </div>
       </div>
       <div class="settings-modal-ftr">
         <button class="btn-modal-cancel" onclick="closeSettings()">إلغاء</button>
@@ -617,7 +644,19 @@ body {
       <div class="eco-modal-body">
         <div class="cl-version-block">
           <div class="cl-version-row">
-            <span class="cl-ver-badge" id="clLatestVerBadge"></span>
+            <span class="cl-ver-badge" id="clLatestVerBadge">v2.1.0</span>
+            <span class="cl-ver-date">18-11-2026</span>
+          </div>
+          <ul class="cl-items">
+            <li class="cl-item"><span class="cl-tag new">جديد</span><span>🩺 <b>فحص النظام</b> في الإعدادات (<code>?action=diag</code>): الأسرار (أسماء وأطوال)، شوبيفاي وصلاحياته وتكلفة الاستعلام، ووردبريس (بما فيه تنبيه سقف 429)، والـ D1.</span></li>
+            <li class="cl-item"><span class="cl-tag new">جديد</span><span>الخروج التلقائي بعد <b>60 دقيقة</b> من غير نشاط، والخروج اليدوي بقى فوري بلا تأكيد.</span></li>
+            <li class="cl-item"><span class="cl-tag fix">إصلاح</span><span>الترتيب على رؤوس الأعمدة بقى <b>على السيرفر</b> — كان بيرتّب صفحة الـ ١٠٠ صف اللي في المتصفح بس وشكله ترتيب للسجل كله. <code>MIN_WORKER_VERSION</code> اترفعت لـ <code>3.1.0</code>.</span></li>
+            <li class="cl-item"><span class="cl-tag change">تغيير</span><span>اللون الثانوي للنصوص بقى أغمق. والـ Worker: شوبيفاي API <code>2026-10</code> · إعادة محاولة على التوكن و<code>THROTTLED</code> · حارس <code>WORKER_SECRET</code> الغايب.</span></li>
+          </ul>
+        </div>
+        <div class="cl-version-block">
+          <div class="cl-version-row">
+            <span class="cl-ver-badge old">v2.0.0</span>
             <span class="cl-ver-date">10-09-2026</span>
           </div>
           <ul class="cl-items">
@@ -696,6 +735,7 @@ body {
             <table>
               <tr><th>الـ action</th><th>بيعمل إيه</th></tr>
               <tr><td><code>get_config</code></td><td>نسخة الـ Worker — لحارس النسخة</td></tr>
+              <tr><td><code>diag</code></td><td>فحص ذاتي بدون أي كتابة — الأسرار (أسماء وأطوال) · D1 · شوبيفاي وصلاحياته وتكلفة الاستعلام · endpoint ووردبريس</td></tr>
               <tr><td><code>get_stats</code></td><td>شريط الحالة (آخر مزامنة · آخر تسليمة · آخر ٢٤ ساعة)</td></tr>
               <tr><td><code>get_employees</code></td><td>قائمة الموظفين في شاشة الدخول</td></tr>
               <tr><td><code>check_employee</code> · <code>register_pin</code> · <code>verify_employee</code> · <code>log_logout</code></td><td>تسجيل الدخول الموحّد</td></tr>
@@ -716,6 +756,7 @@ body {
               <li><code>§CONFIG</code> — الثوابت · <code>getConfig()</code> · <code>esc()</code> · <code>apiRequest</code> بمهلة</li>
               <li><code>§SHELL-JS</code> — الإعدادات · التوست · النسخة · حارس نسخة الـ Worker</li>
               <li><code>§AUTH-JS</code> — شاشة الدخول على خطوتين (اختيار الموظف ← PIN)</li>
+              <li><code>§IDLE-JS</code> — الخروج التلقائي لعدم النشاط (<code>IDLE_TIMEOUT_MIN = 60</code>) + <code>performLogout(reason)</code> (Standards #52)</li>
               <li><code>§DATETIME</code> — <code>Africa/Cairo</code> محسوبة بـ <code>Intl</code>، مش إزاحة ثابتة</li>
               <li><code>§TOOL-JS::health</code> — شريط الحالة من <code>get_stats</code></li>
               <li><code>§LOG-JS</code> — الفلاتر · الترتيب · الترقيم · التصدير</li>
@@ -725,6 +766,7 @@ body {
             <ul>
               <li><code>TOOL_VERSION</code> — مصدر واحد لرقم النسخة (الهيدر + الـ Changelog + شاشة الدخول)</li>
               <li><code>MIN_WORKER_VERSION</code> — أقل Worker الصفحة دي بتشتغل معاه. <strong>مالهاش أي علاقة بـ <code>TOOL_VERSION</code></strong></li>
+              <li><code>IDLE_TIMEOUT_MIN</code> — 60 دقيقة لكل الأدوات بلا استثناء (ممنوع تغييرها لأداة بعينها)</li>
               <li><code>WORKER_URL</code> — ثابت في الكود، مش إعداد ومش <code>localStorage</code> (Standards #28)</li>
               <li><code>LS_SECRET</code> — <code>stylebox_stock_sync_worker_secret</code> — المفتاح الوحيد المخزّن</li>
               <li><code>LOG_TYPE_META</code> — الاسم والتصنيف اللوني لكل نوع من الخمستاشر</li>
@@ -750,6 +792,13 @@ body {
       </div>
     </div>
   </div>
+
+<!-- Idle warning banner — §IDLE-JS (z-index 9000). النص بيتملا من JS. -->
+<div class="idle-warn" id="idleWarn" role="alert">
+  <div id="idleWarnText"></div>
+  <div class="idle-ask" id="idleWarnAsk"></div>
+  <button type="button" onclick="idleStay()">أنا موجود</button>
+</div>
 
   <div class="toast-container" id="toastContainer"></div>
 </div><!-- /.container -->
@@ -777,6 +826,7 @@ body {
         <div class="login-status warn" id="loginStatus">الإعدادات غير مكتملة — افتح الإعدادات أولاً.</div>
       </div>
 
+      <div class="login-notice" id="loginNotice"></div>
       <div class="login-alert" id="loginAlert"></div>
 
       <div class="pin-zone" id="pinZone">
@@ -812,13 +862,13 @@ body {
 // ══════════════════════════════════════════════════════════════
 // §CONFIG
 // ══════════════════════════════════════════════════════════════
-const TOOL_VERSION = 'v2.0.0';
+const TOOL_VERSION = 'v2.1.0';
 
 // أقل نسخة Worker الواجهة دي بتشتغل معاها. الصفحة معتمدة على get_stats
-// و get_config وعلى فلاتر القوايم في get_logs — كلهم اتضافوا في Worker v3.0.0.
+// و get_config وعلى فلاتر القوايم في get_logs — كلهم اتضافوا في Worker v3.0.0؛ و diag و sortBy/sortDir في get_logs اتضافوا في v3.1.0.
 // ⚠️ صيانة: أي endpoint أو حقل جديد الصفحة تقراه → ارفع الرقم ده في نفس التسليم.
 // ⚠️ مالهاش أي علاقة بـ TOOL_VERSION — دي بتوصف أقل Worker مقبول، مش الصفحة.
-const MIN_WORKER_VERSION = '3.0.0';
+const MIN_WORKER_VERSION = '3.1.0';
 
 // الرابط ثابت مش سر ومش حقل إعدادات — html-builder Standards #28.
 // القيمة من CLAUDE.md بتاع الريبو.
@@ -1272,15 +1322,17 @@ document.addEventListener('keydown', e => {
 async function finishLogin(username, displayName) {
   currentEmployee = { username, displayName };
   document.getElementById('loginOverlay').classList.add('hidden');
+  hideLoginNotice();
+  idleStart();                       // §IDLE-JS — يبدأ عدّاد عدم النشاط (60 د)
   document.getElementById('activeUserBtn').textContent = `👤 ${displayName}`;
   showToast(`أهلاً ${displayName} 👋`, 'success');
   playBeep('success');
   refreshAll();
 }
 
-async function doLogout() {
-  if (!currentEmployee) return;
-  if (!confirm('تسجيل الخروج؟')) return;
+// reason: 'manual' | 'idle' — نفس المسار للاتنين (Standards #52)
+function performLogout(reason) {
+  idleStop();
   apiGet('log_logout', { username: currentEmployee.username }).catch(() => {});
 
   currentEmployee = null;
@@ -1304,6 +1356,117 @@ async function doLogout() {
   resetHealthCards();
 
   document.getElementById('loginOverlay').classList.remove('hidden');
+  if (reason === 'idle') showLoginNotice('تم تسجيل خروج تلقائي لعدم النشاط');
+}
+
+// ── الخروج اليدوي: فوري بلا أي تأكيد (confirm ممنوع — Standards #52) ──
+// الضغط على اسم الموظف في الهيدر بيطلّع. حارس الدفعة مش تأكيد.
+function doLogout() {
+  if (!currentEmployee) return;
+  if (isIdleBlocked()) {
+    showToast('فيه عملية بتتنفّذ دلوقتي — استنى لحد ما تخلص', 'warning');
+    return;
+  }
+  performLogout('manual');
+}
+
+function showLoginNotice(msg) {
+  const el = document.getElementById('loginNotice');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+function hideLoginNotice() {
+  document.getElementById('loginNotice')?.classList.remove('visible');
+}
+
+// ══════════════════════════════════════════════════════════════
+// §IDLE-JS — الخروج التلقائي لعدم النشاط (Standards #52)
+// القاعدة: 60 دقيقة لكل الأدوات من غير استثناء. التفاصيل: references/idle-logout.md
+// ══════════════════════════════════════════════════════════════
+const IDLE_TIMEOUT_MIN  = 60;     // ← ثابت موحّد — ممنوع تغييره لأداة بعينها
+const IDLE_WARN_SEC     = 60;     // التحذير قبل الخروج بدقيقة
+const IDLE_CHECK_MS     = 30000;  // فحص كل 30 ثانية (مقارنة وقت فعلي — مش setTimeout واحد طويل)
+const IDLE_THROTTLE_MS  = 10000;  // أقصى تكرار لتسجيل النشاط (السكانر بيبعت ضغطات متتالية)
+let   idleLastActivity  = Date.now();
+let   idleTicker        = null;
+let   idleFastTicker    = null;   // عدّ تنازلي كل ثانية طول ما البانر ظاهر
+
+// ← CUSTOMIZE: true طول ما فيه دفعة/عملية شغّالة (isUpdating / setUpdateLock)
+function isIdleBlocked() {
+  return typeof isUpdating !== 'undefined' && !!isUpdating;
+}
+
+function idleMark() {
+  const now = Date.now();
+  if (now - idleLastActivity < IDLE_THROTTLE_MS) return;
+  idleLastActivity = now;
+  idleHideWarn();
+}
+// أحداث حقيقية بس — mousemove ممنوع، والـ polling/network مابيعدّش نشاط
+['keydown', 'pointerdown', 'wheel', 'touchstart', 'scroll'].forEach(ev =>
+  document.addEventListener(ev, idleMark, { capture: true, passive: true })
+);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) idleTick(); });
+window.addEventListener('focus', idleTick);
+
+function idleStart() {
+  idleLastActivity = Date.now();
+  clearInterval(idleTicker);
+  idleTicker = setInterval(idleTick, IDLE_CHECK_MS);
+}
+function idleStop() {
+  clearInterval(idleTicker);
+  idleTicker = null;
+  idleHideWarn();
+}
+function idleStay() {                 // زرار "أنا موجود"
+  idleLastActivity = Date.now();
+  idleHideWarn();
+}
+function idleTick() {
+  if (!currentEmployee) return;
+  const limit = IDLE_TIMEOUT_MIN * 60000;
+  if (isIdleBlocked()) { idleLastActivity = Date.now(); idleHideWarn(); return; }
+  const idleMs = Date.now() - idleLastActivity;
+  if (idleMs >= limit) { performLogout('idle'); return; }
+  const remainMs = limit - idleMs;
+  if (remainMs <= IDLE_WARN_SEC * 1000) idleShowWarn(Math.ceil(remainMs / 1000));
+  else idleHideWarn();
+}
+function idleShowWarn(sec) {
+  document.getElementById('idleWarnText').textContent = `سيتم تسجيل الخروج لعدم النشاط بعد ${sec} ثانية`;
+  document.getElementById('idleWarnAsk').textContent  = `هل أنت موجود يا ${currentEmployee ? currentEmployee.displayName : ''}؟`;
+  document.getElementById('idleWarn').classList.add('visible');
+  if (!idleFastTicker) idleFastTicker = setInterval(idleTick, 1000);
+}
+function idleHideWarn() {
+  document.getElementById('idleWarn')?.classList.remove('visible');
+  clearInterval(idleFastTicker);
+  idleFastTicker = null;
+}
+
+
+// ── الفحص الذاتي — ممنوع يعرض قيمة أي سر (أسماء وأطوال بس) ──
+async function runDiag() {
+  const box = document.getElementById('diagResult');
+  const btn = document.getElementById('diagBtn');
+  box.innerHTML = 'جارٍ الفحص…';
+  btn.disabled = true;
+  try {
+    const d = await apiGet('diag');
+    // الشكل المعتمد مصفوفة [{ok,label,detail}] — والكائن مدعوم تحسبًا
+    const checks = Array.isArray(d.checks)
+      ? d.checks
+      : Object.entries(d.checks || {}).map(([k, v]) => ({ ok: v === true || v === 'ok', label: k, detail: String(v) }));
+    const info = new Set(['envKeys', 'Origin', 'TOOL_VERSION', 'API_VERSION', 'throttleStatus', 'actualQueryCost', 'accessScopes']);
+    box.innerHTML = checks.map(c =>
+      `<div>${info.has(c.label) && c.ok ? 'ℹ️' : (c.ok ? '✅' : '❌')} <b>${esc(c.label)}</b> — ${esc(c.detail)}</div>`).join('');
+  } catch (e) {
+    box.innerHTML = `<div style="color:var(--red-dark);font-weight:700;">❌ ${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function updateLoginSettingsBtn() {
@@ -1661,8 +1824,6 @@ function clearAllLogFilters() {
 }
 
 // ─── §LOG-JS::sort — 3 حالات، مستقل تمامًا عن الفلاتر ───
-const sortConfig = { date:{type:'date'}, time:{type:'date'}, type:{type:'string'},
-  sku:{type:'string'}, before:{type:'number'}, after:{type:'number'}, delta:{type:'number'} };
 let sortState = { key: null, dir: null };
 
 function toggleSort(key) {
@@ -1670,7 +1831,10 @@ function toggleSort(key) {
   else if (sortState.dir === 'asc') { sortState.dir = 'desc'; }
   else { sortState.key = null; sortState.dir = null; }
   updateSortHeaderUI();
-  renderLogTable(applySort(logRows));
+  // 🔴 الترتيب في الـ Worker (get_logs · sortBy/sortDir) — مش على صفحة الـ ١٠٠ صف اللي في المتصفح،
+  //    وإلا السهم يبان إنه رتّب السجل كله وهو رتّب صفحة واحدة بس (data-table-standard §8)
+  logCurrentPage = 1;
+  fetchLog();
 }
 function updateSortHeaderUI() {
   document.querySelectorAll('.sort-icon').forEach(el => {
@@ -1682,19 +1846,8 @@ function updateSortHeaderUI() {
     th.classList.toggle('sorted', th.dataset.sortKey === sortState.key);
   });
 }
-function applySort(rows) {
-  if (!sortState.key) return rows;
-  const cfg = sortConfig[sortState.key], dir = sortState.dir === 'asc' ? 1 : -1;
-  return [...rows].sort((a, b) => {   // نسخة جديدة — ممنوع تعديل مصدر البيانات
-    const av = a[sortState.key], bv = b[sortState.key];
-    if (cfg.type === 'date')   return ((av ? av.getTime() : 0) - (bv ? bv.getTime() : 0)) * dir;
-    if (cfg.type === 'number') {
-      const an = Number.isFinite(av) ? av : -Infinity, bn = Number.isFinite(bv) ? bv : -Infinity;
-      return (an - bn) * dir;
-    }
-    return String(av ?? '').localeCompare(String(bv ?? ''), 'ar') * dir;
-  });
-}
+// الترتيب بيتم في الـ Worker قبل ما الصفحة توصل (sortBy/sortDir) — مفيش ترتيب محلي. المفاتيح (date/time/type/sku/before/after/delta)
+// لازم تطابق LOG_SORT_COLUMNS في index.js حرفيًا — مفتاح مش هناك بيرجع للافتراضي في صمت.
 
 // ─── §LOG-JS::fetch ───
 // مصدر واحد لباراميترات الفلاتر — بتستخدمه التلات نداءات، فمفيش تعريف مكرر
@@ -1709,6 +1862,7 @@ function logParams() {
   if (search)       p.search = search;
   if (from)         p.dateFrom = from;
   if (to)           p.dateTo = to;
+  if (sortState.key) { p.sortBy = sortState.key; p.sortDir = sortState.dir; }
   return p;
 }
 
@@ -1755,7 +1909,7 @@ async function fetchLog() {
     logRows = (pageData.entries || []).map(buildLogRow);
     logTotalCount = countData.ok ? (countData.total || 0) : 0;
     logLoaded = true;
-    renderLogTable(applySort(logRows));
+    renderLogTable(logRows);
     renderLogPagination();
   } catch (err) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="8">⚠️ ${esc(err.message)}</td></tr>`;
