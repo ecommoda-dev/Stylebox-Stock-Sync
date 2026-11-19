@@ -1,4 +1,8 @@
+<div dir="rtl" style="text-align: right;">
+
 # Stylebox-Stock-Sync
+
+![version](https://img.shields.io/badge/version-v3.1.0-blue)
 
 مزامنة استوك Shopify → WooCommerce (`stylebox.online`) عن طريق ويبهوك
 `inventory_levels/update`، وواجهة **قراءة فقط** لعرض سجل كل عملية مزامنة.
@@ -42,3 +46,7 @@ Workers Builds، والواجهة عبر GitHub Pages. **مفيش لصق كود 
 Cloudflare بعد الربط** — الريبو هو المصدر الوحيد.
 
 التفاصيل والفخاخ → `CLAUDE.md`.
+
+آخر تحديث: 18-11-2026 — 23:51
+
+</div>

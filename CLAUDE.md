@@ -1,10 +1,14 @@
+<div dir="rtl" style="text-align: right;">
+
 # مزامنة استوك Shopify → WooCommerce (`Stylebox-Stock-Sync`)
+
+![version](https://img.shields.io/badge/version-v3.1.0-blue)
 
 **بتعمل إيه:** مستقبِل ويبهوك `inventory_levels/update` من Shopify — بيعمل
 Triple-Check (SKU + GTIN + WordPress Variation Id) وبيحدّث استوك الـ variation
 على `stylebox.online`. والواجهة **قراءة فقط**: سجل كل عملية مزامنة تمّت أو فشلت.
 **مين بيستخدمها:** مخزن · إدارة (عرض السجل بس — مفيش أي تعديل استوك من الواجهة)
-**الإصدار:** Worker `v3.0.0` (`?action=get_config`) · الواجهة `v2.0.0` (شريحة النسخة في الهيدر)
+**الإصدار:** Worker `v3.1.0` (`?action=get_config`) · الواجهة `v2.1.0` (شريحة النسخة في الهيدر)
 
 > 🟢 **الاشتراك اتنقل لـ Webhook Control Center يوم 10-09-2026.** قبل كده كان
 > ويبهوك متعمول من داشبورد شوبيفاي (Settings → Notifications → Webhooks).
@@ -326,50 +330,38 @@ index.html نفس الـ blob SHA بتاع Index.html القديم في commit e
 > كلاودفلير وقتها — الكوميتات فوق هي مرجع «النسخة الأصلية» لو احتجت
 > ترجعلها، مش وصف للملف الحالي.
 
+## مواءمة 18-11-2026 — Worker v3.1.0 · الواجهة v2.1.0
+
+> مواءمة مع المهارات الحالية. `node test.mjs` — **كل الفحوص عدّت** (اتزاد قسم ١٦ بخمس حالات جديدة).
+
+| الحاجة | قبل | بعد |
+|---|---|---|
+| إصدار API | `2026-01` | **`2026-10`** (`inventoryItem.variants` اتفحصت على Shopify MCP) |
+| `getAccessToken` | محاولة واحدة (مع كاش) | 3 محاولات + backoff قصير (مسار ويبهوك — ميزانية ~٥ ث) |
+| `shopifyGQL` | بيرمي على الأخطاء | + إعادة محاولة قصيرة على `THROTTLED` + التقاط التكلفة |
+| `getLogs` | `ORDER BY timestamp DESC` حرفي | **`orderByClause()`** بقائمة بيضاء + كاسر تعادل — الواجهة بقت بتبعت `sortBy`/`sortDir` والترتيب على السيرفر (كان بيرتّب صفحة الـ١٠٠ صف بس) |
+| `diag` | **مفيش** (أداة بتكتب على ووردبريس!) | **اتضاف** + زرار 🩺 في الإعدادات |
+| حارس `WORKER_SECRET` | `Bearer undefined` ممكن يعدّي | `typeof`+`trim` ⇒ 500 |
+| الواجهة | خروج بـ`confirm` · مفيش خروج تلقائي | خروج تلقائي 60 د + خروج فوري |
+
 ## بصمة المهارات
 
 | المهارة | الإصدار وقت آخر تعديل |
 |---|---|
-| ecommoda-worker-builder | v3.8.0 |
-| ecommoda-constants | v3.1.0 |
-| woocommerce-sync-helper | v1.0.0 |
-| shopify-graphql-helper | v2.1.0 |
-| shopify-webhook-helper | v2.2.0 |
-| ecommoda-html-builder | v7.0.0 |
+| ecommoda-worker-builder | v4.0.0 |
+| ecommoda-constants | v6.0.0 |
+| woocommerce-sync-helper | v2.1.0 |
+| shopify-graphql-helper | v3.0.1 |
+| shopify-webhook-helper | v1.0.0 |
+| ecommoda-html-builder | v9.1.0 |
 
-آخر مطابقة: 24-09-2026 · `index.js` v3.0.1 · `index.html` v2.0.0
-
-✅ **اتقفلت 10-09-2026:**
-- **`ecommoda-html-builder` — الواجهة كلها.** كانت متأخرة عن المعيار بجيل
-  كامل: بلا App Shell · بلا شاشة دخول بـ PIN · بلا نافذة «عن الأداة» · بلا
-  سجل تحديثات · بلا رقم نسخة · بلا حارس نسخة Worker · فلترة في المتصفح.
-  اتبنت من جديد على v7.0.0 واتفحصت بـ Step 9 و9A و9B.
-- **`ecommoda-constants` §13 — التوقيت الثابت.** `index.html` بقى بيحسب
-  `Africa/Cairo` بـ `Intl.DateTimeFormat`. اتأكدنا بالمقارنة: نفس نتيجة
-  الكود القديم قبل 29-10-2026 بالظبط، والفرق ساعة كاملة بعده — يعني الباج
-  كان حقيقي ومقفول دلوقتي.
-- **`ecommoda-html-builder` — قاعدة `esc()` قبل `innerHTML`.** `notes`
-  و`sku` بيتحطوا في الجدول من D1، وقيمهم أصلاً جاية من Shopify/WooCommerce
-  (نص من برّه الأداة). بقى فيه `esc()` على كل قيمة.
-
-✅ **اتقفلت 24-09-2026:**
-- **`check-log-values.mjs` اتستبدل بالنسخة المصلَّحة (Step 7 في
-  `ecommoda-worker-builder`).** النسخة القديمة كانت بتدوّر على `type:`
-  بنقطتين بس، فـ object shorthand (`{ tool, type }`) كان بيعدّي في صمت.
-  التشغيل بالنسخة الجديدة على `log-values.json` الحالي رجّع **exit 0** من
-  أول تشغيل — الـ١٥ قيمة كلهم مسجّلين فعلًا ومفيش قيم ديناميكية ولا
-  `blindSpans`.
-- **الطبقة ٥ — الحارس الديناميكي لقيم اللوج (Step 7-ج).** `LOG_REGISTRY`
-  اتبنى من `log-values.json` (مفتاحه `wp_stock_sync` بالـ١٥ قيمة)، واتحط
-  جوّه `writeLog` (الأنكور الوحيد في الملف). أي قيمة `(tool, type)` مش
-  مسجّلة بتتكتب عادي + `extra._unregistered = true` + UPSERT صامت في
-  `log_value_alerts` **بعد** الكتابة — مفيش رفض كتابة أبدًا.
+آخر مطابقة: 18-11-2026 · `index.js` v3.1.0 · `index.html` v2.1.0
 
 🔴 معلّقة:
-- **عشر قيم `type` غير مسجّلة في `ecommoda-constants` §7** (فوق) — مخالفة
-  سابقة للنقل، تتقفل بتحديث السكيل مش بتعديل كود. النقل ده **ما ضافش أي
-  قيمة جديدة** بقصد: حارس الكمية الجديد بيسجّل تحت `empty_payload_bug`
-  الموجودة أصلاً بدل ما يفتح نوع حادي عشر غير مسجّل.
+- 🟡 **شاشة السجل لسه على الشكل القديم (قسم فلاتر فوق الجدول — `S47`) ومن غير تحكم في عرض الأعمدة (`S51`)** — معيار الجداول الجديد (فلاتر في رأس العمود + قايمة `position:fixed` + مقبض سحب العرض، `data-table-standard.md` §2 و§9ب) إعادة تصميم كبيرة لشاشة تشغيل حيّة. اتأجّلت **بقرار مقصود** 18-11-2026 (المهارة نفسها بتصنّفها 🟡 «عند أول فتح، مش في حملة») عشان ما تتغيّرش من غير مراجعة بصرية حقيقية. تتعمل في جلسة مخصصة بـ `templates/24_data-table-section.html` + اختبار Playwright.
+- 🟡 **Build watch paths** (chip لـ`index.js` وchip منفصل لـ`wrangler.toml`) — إعداد في داشبورد Cloudflare مش في الريبو، ماتأكدش منه من الجلسة دي.
+- ✅ **اتقفل 18-11-2026:** «عشر قيم `type` غير مسجّلة في `ecommoda-constants` §7» — البند ده كان قبل `constants` v3.0.0؛ السجل بقى `log-values.json` جنب الكود و`node check-log-values.mjs` بيرجّع exit 0 على كل القيم.
+- ⚠️ **اختبار حي لازم بعد النشر:** 🩺 فحص النظام (جديد) · وبعدها غيّر مخزون variant مربوط وتأكد من صف `synced`. وتذكّر إن `MIN_WORKER_VERSION` بقت `3.1.0` — الواجهة هتعرض ⚠️ لو الـ Worker المنشور أقدم.
 
 ## عطل مفتوح: WordPress بيرجّع 404 (من 09-09-2026)
 
@@ -444,4 +436,7 @@ index.html نفس الـ blob SHA بتاع Index.html القديم في commit e
   قرار منتج. لو اتقرر يتعمل، لازم يتوثّق في العقد ده الأول.
 - **إعادة تسمية الـ Worker** مؤجَّلة بقرار المشروع (§1 قرار ٦).
 
-آخر تحديث: 24-09-2026
+
+آخر تحديث: 18-11-2026 — 23:51 — مواءمة مع المهارات الحالية (API 2026-10 · diag · ترتيب السيرفر · خروج تلقائي)
+
+</div>

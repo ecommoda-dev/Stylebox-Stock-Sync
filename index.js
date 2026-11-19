@@ -1,14 +1,14 @@
 // EcomModa — Stylebox Stock Sync (Worker)
-// skills: worker-builder v3.8.0 · html-builder v7.0.0 · constants v3.1.0 · woocommerce-sync-helper v1.0.0 · shopify-graphql-helper v2.1.0 · shopify-webhook-helper v2.2.0 — 24-09-2026
+// skills: worker-builder v4.0.0 · html-builder v9.1.0 · constants v6.0.0 · woocommerce-sync-helper v2.1.0 · shopify-graphql-helper v3.0.1 · shopify-webhook-helper v1.0.0 — 18-11-2026
 // ══════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════
 // §CONSTANTS
 // ══════════════════════════════════════════════════════
 const TOOL_NAME = 'wp_stock_sync';
-const TOOL_VERSION = '3.0.1';
+const TOOL_VERSION = '3.1.0';
 const LOG_EXPORT_MAX = 2000;   // سقف التصدير — بيرجع للواجهة كـ `cap` عشان
                                // تعرف إن الملف اتقص بدل ما تقول «تم ✓» على ناقص
-const API_VERSION = '2026-01';
+const API_VERSION = '2026-10';   // اتفحص على Shopify MCP 18-11-2026 — inventoryItem.variants سليم
 
 // الاشتراك اتنقل من ويبهوك داشبورد شوبيفاي (Settings → Notifications) إلى
 // Webhook Control Center (webhookSubscriptionCreate عبر الـ API) — 10-09-2026.
@@ -290,9 +290,27 @@ function buildLogFilterSQL(select, {
   return { sql, b };
 }
 
-async function getLogs(db, { limit = 100, offset = 0, ...filters } = {}) {
+// ⚠️ قائمة **مقفولة** — القيمة جاية من العميل وبتتلزق في نص SQL مباشرةً
+//    (ORDER BY مابيقبلش bind). أي قيمة بره القايمة بترجع للافتراضي بدون خطأ.
+// ⚠️ المفاتيح لازم تطابق `data-sort-key` في الواجهة **حرفيًا** — مفتاح مش في
+//    القايمة بيرجع للافتراضي في صمت، فالعمود يبان إنه اترتّب وهو مااترتّبش.
+const LOG_SORT_COLUMNS = {
+  date: 'timestamp', time: 'timestamp', type: 'type', sku: 'sku',
+  before: 'value_before', after: 'value_after', delta: 'delta',
+};
+
+function orderByClause(sortBy, sortDir) {
+  const col = LOG_SORT_COLUMNS[String(sortBy || '')] || 'timestamp';
+  const dir = String(sortDir || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  // 🔴 كاسر تعادل إلزامي: من غيره صفوف نفس القيمة بترتيب عشوائي بين الصفحات،
+  //    والصف الواحد ممكن يظهر في صفحتين **أو مايظهرش خالص**.
+  return col === 'timestamp' ? ` ORDER BY timestamp ${dir}`
+                             : ` ORDER BY ${col} ${dir}, timestamp DESC`;
+}
+
+async function getLogs(db, { limit = 100, offset = 0, sortBy = null, sortDir = null, ...filters } = {}) {
   const { sql, b } = buildLogFilterSQL('SELECT *', filters);
-  const q = sql + ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+  const q = sql + orderByClause(sortBy, sortDir) + ' LIMIT ? OFFSET ?';
   return (await db.prepare(q)
     .bind(...b, Math.min(Number(limit) || 100, 100), Math.max(Number(offset) || 0, 0)).all()).results;
 }
@@ -348,31 +366,50 @@ function requireEnv(env, names) {
   if (missing.length) throw new Error(`متغيّرات ناقصة في الـ Worker: ${missing.join(', ')}`);
 }
 
+// §SHOPIFY::getAccessToken — التوكن والـ throttle bucket مشتركين بين كل Workers الستاك
+// (نفس الـ Custom App) فالفشل العابر لازم يتعافى (worker-builder Step 5A ⑯ ②).
+// ⚠️ هنا مسار ويبهوك (ميزانية ~٥ ثواني) فالـ backoff قصير عن قصد.
+// الاسم OAUTH_MAX_ATTEMPTS مقصود — وصفة الجرد بتدوّر عليه.
+const OAUTH_MAX_ATTEMPTS = 3;
+
 async function getAccessToken(env, { force = false } = {}) {
   requireEnv(env, ['SHOP_DOMAIN', 'CLIENT_ID', 'CLIENT_SECRET']);
   if (!force && cachedToken && Date.now() < cachedToken.expiresAt) return cachedToken.token;
 
   const shopDomain = env.SHOP_DOMAIN.replace(/\/$/, '');
-  const res = await fetch(`https://${shopDomain}/admin/oauth/access_token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: env.CLIENT_ID,
-      client_secret: env.CLIENT_SECRET,
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.access_token) {
-    cachedToken = null;
-    throw new Error(`OAuth failed: ${res.status} ${JSON.stringify(data)}`);
+  let lastErr = null;
+  for (let attempt = 1; attempt <= OAUTH_MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(`https://${shopDomain}/admin/oauth/access_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: env.CLIENT_ID,
+          client_secret: env.CLIENT_SECRET,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.access_token) {
+        cachedToken = null;
+        const retriable = res.status === 429 || res.status >= 500;
+        lastErr = new Error(`OAuth failed: ${res.status} ${JSON.stringify(data)}`);
+        if (retriable && attempt < OAUTH_MAX_ATTEMPTS) { await new Promise(r => setTimeout(r, 300 * attempt)); continue; }
+        throw lastErr;
+      }
+      // هامش دقيقة قبل الانتهاء الحقيقي — عشان ما نستخدمش توكن بيموت أثناء النداء.
+      const ttlMs = Number.isFinite(data.expires_in)
+        ? Math.max(60_000, data.expires_in * 1000 - 60_000)
+        : 30 * 60 * 1000;
+      cachedToken = { token: data.access_token, expiresAt: Date.now() + ttlMs };
+      return data.access_token;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < OAUTH_MAX_ATTEMPTS && !/^OAuth failed/.test(e.message)) { await new Promise(r => setTimeout(r, 300 * attempt)); continue; }
+      throw lastErr;
+    }
   }
-  // هامش دقيقة قبل الانتهاء الحقيقي — عشان ما نستخدمش توكن بيموت أثناء النداء.
-  const ttlMs = Number.isFinite(data.expires_in)
-    ? Math.max(60_000, data.expires_in * 1000 - 60_000)
-    : 30 * 60 * 1000;
-  cachedToken = { token: data.access_token, expiresAt: Date.now() + ttlMs };
-  return data.access_token;
+  throw lastErr || new Error('OAuth: unknown failure');
 }
 
 // ── §SHOPIFY::shopifyGQL ──
@@ -380,7 +417,11 @@ async function getAccessToken(env, { force = false } = {}) {
 // اتلغى (401). كمان بيتحقق من حالة الـ HTTP قبل قراءة الـ JSON: من غير كده،
 // أي رد مش-JSON (429/502 وصفحة HTML) بيرمي "Unexpected token <" — رسالة
 // بتخفي السبب الحقيقي في السجل.
-async function shopifyGQL(env, query, variables = {}, { retryOn401 = true } = {}) {
+// ⑮ تكلفة الاستعلام — للقياس بس (صفر اعتماد من الواجهة)
+let _lastThrottle  = null;
+let _lastQueryCost = null;
+
+async function shopifyGQL(env, query, variables = {}, { retryOn401 = true, throttleTries = 0 } = {}) {
   const shopDomain = env.SHOP_DOMAIN.replace(/\/$/, '');
   const token = await getAccessToken(env);
   const res = await fetch(`https://${shopDomain}/admin/api/${API_VERSION}/graphql.json`, {
@@ -392,14 +433,27 @@ async function shopifyGQL(env, query, variables = {}, { retryOn401 = true } = {}
   if (res.status === 401 && retryOn401) {
     cachedToken = null;
     await getAccessToken(env, { force: true });
-    return shopifyGQL(env, query, variables, { retryOn401: false });
+    return shopifyGQL(env, query, variables, { retryOn401: false, throttleTries });
   }
   if (!res.ok) {
     throw new Error(`Shopify HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   }
 
   const data = await res.json();
-  if (data.errors) throw new Error('GraphQL error: ' + JSON.stringify(data.errors));
+  if (data.errors) {
+    // THROTTLED = ميزانية التكلفة المشتركة بين الـ Workers خلصت لحظيًا — إعادة محاولة قصيرة
+    const throttled = Array.isArray(data.errors) && data.errors.some(e => e?.extensions?.code === 'THROTTLED');
+    if (throttled && throttleTries < 2) {
+      await new Promise(r => setTimeout(r, 600 * (throttleTries + 1)));
+      return shopifyGQL(env, query, variables, { retryOn401, throttleTries: throttleTries + 1 });
+    }
+    throw new Error('GraphQL error: ' + JSON.stringify(data.errors));
+  }
+  const cost = data.extensions?.cost;
+  if (cost) {
+    if (cost.throttleStatus) _lastThrottle = cost.throttleStatus;
+    _lastQueryCost = { requested: cost.requestedQueryCost ?? null, actual: cost.actualQueryCost ?? null };
+  }
   return data.data;
 }
 
@@ -572,6 +626,10 @@ export default {
     }
 
     // 2. WORKER_SECRET check — ALWAYS second (everything else in this Worker)
+    // 🔴 حارس السر الغايب: من غيره غياب WORKER_SECRET بيخلّي الفحص "Bearer undefined" مقبول
+    if (typeof env.WORKER_SECRET !== 'string' || !env.WORKER_SECRET.trim()) {
+      return json({ ok: false, error: 'WORKER_SECRET غير مضبوط على الـ Worker — ضِفه من Settings → Variables وبعدها Promote', step: 'env' }, 500, request);
+    }
     const auth = request.headers.get('Authorization');
     if (!auth || auth !== `Bearer ${env.WORKER_SECRET}`) {
       return json({ error: 'Unauthorized' }, 401, request);
@@ -610,6 +668,63 @@ export default {
           await writeLog(env.DB, { tool: TOOL_NAME, type: 'logout', employee: username, notes: `خروج: ${username.replace(/_/g, ' ')}` });
         }
         return json({ ok: true }, 200, request);
+      }
+
+      // ── §DIAG — فحص ذاتي **بدون أي كتابة**. ⚠️ ممنوع يرجّع قيمة أي سر: أسماء وأطوال بس.
+      //    الشكل المعتمد: مصفوفة [{ ok, label, detail }] (worker-builder Step 5A ⑨)
+      if (action === 'diag') {
+        const checks = [];
+        const add = (ok, label, detail) => checks.push({ ok, label, detail });
+
+        for (const k of ['WORKER_SECRET', 'CLIENT_ID', 'CLIENT_SECRET', 'WP_SYNC_SECRET']) {
+          const v = env[k];
+          const ok = typeof v === 'string' && v.trim().length > 0;
+          add(ok, k, ok ? `مضبوط (${v.length} حرف)` : 'ناقص أو فاضي — ضِفه ثم Promote');
+        }
+        add(!!env.DB, 'DB (D1 binding)', env.DB ? 'موجود' : 'ناقص — راجع [[d1_databases]] في wrangler.toml');
+        add(!!env.SHOP_DOMAIN, 'SHOP_DOMAIN', env.SHOP_DOMAIN || 'ناقص');
+        add(!!env.WP_BASE_URL, 'WP_BASE_URL', env.WP_BASE_URL || 'ناقص');
+        add(!!env.LOCATION_ID, 'LOCATION_ID',
+          env.LOCATION_ID ? String(env.LOCATION_ID) : 'ناقص — حارس الموقع مقفول وأي موقع هيتزامن');
+        add(true, 'envKeys', Object.keys(env).join(', '));
+        add(true, 'Origin', request.headers.get('Origin') || '(بلا)');
+        add(true, 'TOOL_VERSION', TOOL_VERSION);
+        add(true, 'API_VERSION', API_VERSION);
+
+        try {
+          const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM logs WHERE tool = ?').bind(TOOL_NAME).first();
+          add(true, 'D1 logs', `متصل — ${r?.n ?? 0} صف للأداة دي`);
+        } catch (e) { add(false, 'D1 logs', `فشل: ${e.message}`); }
+        try {
+          const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM wp_stock_sync_state').first();
+          add(true, 'D1 state table', `موجود — ${r?.n ?? 0} صف (ordering guard)`);
+        } catch (e) { add(false, 'D1 state table', `فشل: ${e.message} — الـ ordering guard مش شغّال`); }
+
+        try {
+          const data = await shopifyGQL(env, '{ currentAppInstallation { accessScopes { handle } } }');
+          const scopes = (data?.currentAppInstallation?.accessScopes || []).map(x => x.handle);
+          add(true, 'Shopify OAuth', 'التوكن اتجاب بنجاح');
+          add(scopes.includes('read_inventory') || scopes.includes('read_products'), 'accessScopes',
+            scopes.length ? scopes.join(', ') : '(فاضية — الأداة محتاجة read_inventory و read_products)');
+          // ℹ️ read_all_orders: الأداة دي مابتقراش أوردرات (inventory_levels فقط) — معلومة مش شرط (§3.2)
+          add(true, 'read_all_orders', scopes.includes('read_all_orders') ? 'ممنوحة' : 'غير ممنوحة — مش مطلوبة للأداة دي (مخزون بس)');
+          if (_lastThrottle) add(true, 'throttleStatus',
+            `متاح ${_lastThrottle.currentlyAvailable} من ${_lastThrottle.maximumAvailable} · استرجاع ${_lastThrottle.restoreRate}/ث`);
+          if (_lastQueryCost) add(true, 'actualQueryCost',
+            `آخر نداء كلّف ${_lastQueryCost.actual ?? '؟'} نقطة (المطلوب ${_lastQueryCost.requested ?? '؟'})`);
+        } catch (e) { add(false, 'Shopify', `فشل: ${e.message}`); }
+
+        // WooCommerce — GET على variation مش موجود: مفيش كتابة. 404 = الـ endpoint شغّال والسر مقبول
+        try {
+          const probe = `${String(env.WP_BASE_URL || '').replace(/\/$/, '')}/wp-json/ecommoda/v1/variation-stock/0`;
+          const res = await fetch(probe, { headers: { 'X-EcomModa-Secret': env.WP_SYNC_SECRET || '' } });
+          if (res.status === 404) add(true, 'WooCommerce endpoint', '404 على variation وهمي = الـ endpoint شغّال والسر مقبول');
+          else if (res.status === 401 || res.status === 403) add(false, 'WooCommerce endpoint', `${res.status} — WP_SYNC_SECRET مرفوض من WordPress`);
+          else if (res.status === 429) add(false, 'WooCommerce endpoint', '429 — سقف الاستضافة (~30 نداء من نطاقات الكلاود) — مش عطل في ووردبريس');
+          else add(true, 'WooCommerce endpoint', `HTTP ${res.status} (المتوقع 404 على variation وهمي)`);
+        } catch (e) { add(false, 'WooCommerce endpoint', `تعذّر الوصول: ${e.message}`); }
+
+        return json({ ok: checks.every(c => c.ok), checks }, 200, request);
       }
 
       // ── §VERSION ──
@@ -651,8 +766,11 @@ export default {
       if (action === 'get_logs') {
         const entries = await getLogs(env.DB, {
           ...logParamsFrom(url, TOOL_NAME),
-          limit: parseInt(url.searchParams.get('limit') || '100'),
-          offset: parseInt(url.searchParams.get('offset') || '0'),
+          // 🔴 parseInt('abc') → NaN بيوصل لـ D1 كـ bind ويرجّع خطأ غامض — الحراسة إلزامية
+          limit:  Number.isFinite(parseInt(url.searchParams.get('limit'), 10))  ? parseInt(url.searchParams.get('limit'), 10)  : 100,
+          offset: Number.isFinite(parseInt(url.searchParams.get('offset'), 10)) ? parseInt(url.searchParams.get('offset'), 10) : 0,
+          sortBy:  url.searchParams.get('sortBy'),
+          sortDir: url.searchParams.get('sortDir'),
         });
         return json({ ok: true, entries }, 200, request);
       }
