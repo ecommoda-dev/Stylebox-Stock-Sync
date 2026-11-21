@@ -1,5 +1,5 @@
 // EcomModa — Stylebox Stock Sync · اختبارات مسار الويبهوك
-// skills: worker-builder v4.0.0 · shopify-webhook-helper v1.0.0 — 18-11-2026
+// skills: worker-builder v4.2.0 · woocommerce-sync-helper v2.2.0 · shopify-webhook-helper v1.0.0 — 21-11-2026
 //
 // التشغيل:  node test.mjs        (بلا أي تنصيب — مفيش dependencies خالص)
 //
@@ -141,6 +141,11 @@ globalThis.fetch = async (url, opts = {}) => {
     return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 });
   }
   if (u.includes('/graphql.json')) { net.lastGqlUrl = u; return net.gql(); }
+  if (u.includes('/variation-stocks')) {   // endpoint الدفعات (v3.2.0)
+    net.wpBatchCalls = (net.wpBatchCalls || 0) + 1;
+    net.wpBatchBody = JSON.parse(opts.body);
+    return net.wpBatch(net.wpBatchBody);
+  }
   if (u.includes('/variation-stock/')) {
     if (opts.method === 'POST') { net.wpPost = JSON.parse(opts.body); return net.wpUpdate(); }
     return net.wpGet();
@@ -164,6 +169,7 @@ const healthyNet = () => ({
   gql: variantFound,
   wpGet: () => wpOk(100),
   wpUpdate: () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+  wpBatch: () => new Response(JSON.stringify({ code: 'ec_bad_request' }), { status: 400 }),   // probe بتاع diag
 });
 
 let pending = [];
@@ -440,6 +446,127 @@ suite('١٦. مواءمة 18-11-2026 — API 2026-10 · THROTTLED · ترتيب 
   check('قيمة sortBy غريبة ⇒ الافتراضي (مفيش حقن)', sqls.some(q => /ORDER BY timestamp (ASC|DESC) LIMIT/.test(q)) && !sqls.some(q => /DROP/.test(q)), sqls.join(' | '));
   sqls.length = 0; await get('&limit=abc&offset=zzz');
   check('limit/offset غير رقمي ⇒ مش NaN', sqls.length > 0);
+}
+
+suite('١٧. المزامنة الشاملة (bulk_sync_all) — v3.2.0');
+{
+  const node = (vid, sku, wp, { qty = 5, tracked = true, level = true } = {}) => ({ node: {
+    id: `gid://shopify/ProductVariant/${vid}`, sku,
+    metafield: wp ? { value: String(wp) } : null,
+    inventoryItem: { id: `gid://shopify/InventoryItem/${vid}9`, tracked,
+      inventoryLevel: level ? { quantities: [{ name: 'available', quantity: qty }] } : null },
+  } });
+  const page = (edges, more = false) => () => new Response(JSON.stringify({
+    data: { productVariants: { pageInfo: { hasNextPage: more, endCursor: more ? 'CUR2' : null }, edges } },
+  }), { status: 200 });
+  // السيرفر المزيّف: بيرجّع status لكل item حسب variation_id
+  const batchBy = (map) => (body) => new Response(JSON.stringify({ success: true, results:
+    body.items.map((it, index) => ({ index, variation_id: it.variation_id, ...(map[it.variation_id] || { status: 'updated', old_quantity: 1 }) })) }), { status: 200 });
+  const bulk = async (db, qs = '', env = ENV) => {
+    const res = await worker.fetch(new Request('https://w/?action=bulk_sync_all' + qs, { headers: { Authorization: 'Bearer worker-secret' } }), { ...env, DB: db }, ctx);
+    return { status: res.status, body: await res.json(), logs: db.logs };
+  };
+
+  // أ) صفحة فيها كل الحالات
+  net = healthyNet();
+  net.gql = page([
+    node(101, 'A / 40', 1001, { qty: 7 }),              // updated
+    node(102, 'B / 41', 1002, { qty: 3 }),              // unchanged
+    node(103, 'C / 42', null),                          // مش مربوط → تخطي بلا صف
+    node(104, 'D / 43', 1004, { tracked: false }),      // تتبّع مقفول → quantity_unavailable
+    node(105, 'E / 44', 1005, { level: false }),        // مالوش inventoryLevel → location_skipped
+    node(106, 'F / 45', 1006, { qty: 0 }),              // صفر شرعي — لازم يتبعت 0
+    node(107, 'G / 46', 1007, { qty: 9 }),              // sku_mismatch
+  ], true);
+  net.wpBatch = batchBy({ 1002: { status: 'unchanged', old_quantity: 3 }, 1007: { status: 'sku_mismatch', message: 'wc_sku=X' } });
+  const db = makeDB();
+  const r = await bulk(db);
+  const types = Object.fromEntries(r.logs.map(l => [l.sku, l.type]));
+  check('بيرد 200 وok', r.status === 200 && r.body.ok === true, JSON.stringify(r.body).slice(0, 200));
+  check('الصفحة: scanned=7 · linked=6', r.body.scanned === 7 && r.body.linked === 6, JSON.stringify(r.body));
+  check('نداء ووردبريس واحد بس للصفحة كلها (مش ٢ لكل variant)', net.wpBatchCalls === 1, String(net.wpBatchCalls));
+  check('المش مربوط ما اتبعتش ولا اتسجّل له صف', !r.logs.some(l => l.sku === 'C / 42') && !net.wpBatchBody.items.some(i => i.variation_id === 0));
+  check('التتبّع المقفول وغير-الموقع ما اتبعتوش', !net.wpBatchBody.items.some(i => [1004, 1005].includes(i.variation_id)), JSON.stringify(net.wpBatchBody.items));
+  check('الصفر الشرعي اتبعت 0 مش null', net.wpBatchBody.items.find(i => i.variation_id === 1006)?.quantity === 0);
+  check('expected_gtin = variant id', net.wpBatchBody.items.find(i => i.variation_id === 1001)?.expected_gtin === '101');
+  check('الصفوف: synced · no_stock_change_skipped · quantity_unavailable · location_skipped · sku_mismatch',
+    types['A / 40'] === 'synced' && types['B / 41'] === 'no_stock_change_skipped' && types['D / 43'] === 'quantity_unavailable'
+    && types['E / 44'] === 'location_skipped' && types['G / 46'] === 'sku_mismatch', JSON.stringify(types));
+  check('صف واحد بالظبط لكل variant مربوط (٦)', r.logs.length === 6, String(r.logs.length));
+  check('العدّادات: success=2 · already=1 · rejected=3', r.body.results.success === 2 && r.body.results.already === 1 && r.body.results.rejected === 3, JSON.stringify(r.body.results));
+  check('delta الصف synced = 7 - 1', r.logs.find(l => l.sku === 'A / 40')?.delta === 6, String(r.logs.find(l => l.sku === 'A / 40')?.delta));
+  check('كل صف فيه extra.result و extra.stage و origin=bulk_sync',
+    r.logs.every(l => l.extra?.result && l.extra?.stage && l.extra?.origin === 'bulk_sync'), JSON.stringify(r.logs.map(l => l.extra)));
+  check('المتبقي بيرجع cursor للصفحة الجاية', r.body.hasMore === true && r.body.nextCursor === 'CUR2' && r.body.done === false);
+  check('queryCost/throttleStatus بيتعرضوا', 'queryCost' in r.body && 'throttleStatus' in r.body);
+
+  // ب) 429 بجسم فاضي ← circuit breaker: rate_limited + نفس الـ cursor + الحجز اترجّع
+  net = healthyNet();
+  net.gql = page([node(201, 'R / 40', 2001, { qty: 4 }), node(202, 'R / 41', 2002, { qty: 4 })], true);
+  net.wpBatch = () => new Response('', { status: 429, headers: { 'Retry-After': '95' } });
+  const db2 = makeDB();
+  const r2 = await bulk(db2, '&cursor=CURX');
+  check('429 فاضي: rateLimited + deferred=2 + retryAfterSec=95', r2.body.rateLimited === true && r2.body.deferred === 2 && r2.body.retryAfterSec === 95, JSON.stringify(r2.body));
+  check('429: nextCursor = نفس cursor الصفحة (مش اللي بعدها)', r2.body.nextCursor === 'CURX' && r2.body.done === false);
+  check('429: صف rate_limited لكل variant — مش error', r2.logs.length === 2 && r2.logs.every(l => l.type === 'rate_limited' && l.extra.result === 'warning'), JSON.stringify(r2.logs.map(l => l.type)));
+  check('429: العدّادات مفيهاش error', r2.body.results.error === 0);
+  check('429: الحجز اترجّع (الحدث التالي مش هيتعامل كقديم)', [...db2.state.values()].every(v => v.last_triggered_at === ''), JSON.stringify([...db2.state.entries()]));
+  check('429: نداء واحد بس — مفيش إعادة محاولة جوّه الاستدعاء', net.wpBatchCalls === 1, String(net.wpBatchCalls));
+
+  // ج) 429 بجسم JSON = خطأ عادي مش سقف الاستضافة
+  net = healthyNet();
+  net.gql = page([node(301, 'J / 40', 3001)]);
+  net.wpBatch = () => new Response(JSON.stringify({ code: 'rate_limit_plugin' }), { status: 429 });
+  const r3 = await bulk(makeDB());
+  check('429 بجسم JSON ≠ سقف الاستضافة ⇒ unexpected_error', r3.body.rateLimited === false && r3.logs[0]?.type === 'unexpected_error', JSON.stringify(r3.logs.map(l => l.type)));
+
+  // د) السنيپت لسه ما اتلصقش (404 rest_no_route) ⇒ رسالة باسم السبب
+  net = healthyNet();
+  net.gql = page([node(401, 'N / 40', 4001)]);
+  net.wpBatch = () => new Response(JSON.stringify({ code: 'rest_no_route' }), { status: 404 });
+  const r4 = await bulk(makeDB());
+  check('404 rest_no_route ⇒ الرسالة بتقول إن السنيپت ما اتلصقش', /variation-stocks/.test(r4.logs[0]?.notes || '') && r4.logs[0]?.extra?.result === 'error', r4.logs[0]?.notes);
+
+  // هـ) الحراس
+  net = healthyNet(); net.gql = page([node(501, 'L / 40', 5001)]);
+  const r5 = await bulk(makeDB(), '', { ...ENV, LOCATION_ID: undefined });
+  check('LOCATION_ID غايب ⇒ 500 باسم المتغيّر (مش Location/undefined)', r5.status === 500 && /LOCATION_ID/.test(r5.body.error), JSON.stringify(r5.body));
+  check('LOCATION_ID غايب ⇒ ما نادىش شوبيفاي ولا ووردبريس', !net.lastGqlUrl && !net.wpBatchCalls);
+  const noAuth = await worker.fetch(new Request('https://w/?action=bulk_sync_all'), { ...ENV, DB: makeDB() }, ctx);
+  check('من غير Bearer ⇒ 401', noAuth.status === 401);
+
+  // و) حارس الترتيب: حدث أحدث اتعالج لنفس الـ variant ⇒ القراءة دي قديمة
+  net = healthyNet(); net.gql = page([node(601, 'S / 40', 6001)]);
+  const db6 = makeDB(); db6.state.set('6019', { last_triggered_at: '2999-01-01T00:00:00.000Z' });
+  const r6 = await bulk(db6);
+  check('حدث أحدث موجود ⇒ stale_event_skipped ومفيش كتابة', r6.logs[0]?.type === 'stale_event_skipped' && !net.wpBatchCalls, JSON.stringify(r6.logs.map(l => l.type)));
+
+  // و-٢) الأخطر: available = null من شوبيفاي ⇒ ممنوع تتحوّل لصفر وتصفّر منتج شغّال
+  net = healthyNet(); net.gql = page([node(611, 'Z / 40', 6011, { qty: null })]);
+  const r6b = await bulk(makeDB());
+  check('available=null ⇒ quantity_unavailable ومفيش نداء كتابة (مش 0)', r6b.logs[0]?.type === 'quantity_unavailable' && !net.wpBatchCalls, JSON.stringify({ t: r6b.logs.map(l => l.type), calls: net.wpBatchCalls, body: net.wpBatchBody }));
+
+  // ز) ٢١ variant = دفعتين (≤٢٠ للنداء) والفاصل بينهم
+  net = healthyNet();
+  net.gql = page(Array.from({ length: 21 }, (_, i) => node(700 + i, `M / ${i}`, 7000 + i)));
+  net.wpBatch = batchBy({});
+  const r7 = await bulk(makeDB());
+  check('٢١ variant ⇒ نداءين (٢٠ + ١) مش ٢١', net.wpBatchCalls === 2 && r7.body.results.success === 21, `calls=${net.wpBatchCalls} ${JSON.stringify(r7.body.results)}`);
+
+  // ح) رد الدفعة مش مطابق للمدخلات ⇒ مفيش تسجيل نجاح كاذب
+  net = healthyNet(); net.gql = page([node(801, 'X / 40', 8001)]);
+  net.wpBatch = () => new Response(JSON.stringify({ success: true, results: [{ index: 0, variation_id: 999, status: 'updated' }] }), { status: 200 });
+  const r8 = await bulk(makeDB());
+  check('variation_id في الرد مش مطابق ⇒ error مش success', r8.body.results.success === 0 && r8.body.results.error === 1, JSON.stringify(r8.body.results));
+
+  // ط) diag: endpoint الدفعات 400 = شغّال
+  net = healthyNet();
+  const dres = await worker.fetch(new Request('https://w/?action=diag', { headers: { Authorization: 'Bearer worker-secret' } }), { ...ENV, DB: makeDB() }, ctx);
+  const dj = await dres.json();
+  check('diag: فيه فحص endpoint الدفعات وعدّى على 400', dj.checks.some(c => c.label === 'WooCommerce batch endpoint' && c.ok), JSON.stringify(dj.checks.filter(c => /batch/.test(c.label))));
+  const cres = await worker.fetch(new Request('https://w/?action=get_config', { headers: { Authorization: 'Bearer worker-secret' } }), { ...ENV, DB: makeDB() }, ctx);
+  const cj = await cres.json();
+  check('get_config: version=3.2.0 + حجم الصفحة والدفعة', cj.version === '3.2.0' && cj.bulk?.pageSize === 50 && cj.bulk?.wpBatchSize === 20, JSON.stringify(cj));
 }
 
 // ══════════════════════════════════════════════════════

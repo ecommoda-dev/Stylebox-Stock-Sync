@@ -2,13 +2,18 @@
 
 # مزامنة استوك Shopify → WooCommerce (`Stylebox-Stock-Sync`)
 
-![version](https://img.shields.io/badge/version-v3.1.0-blue)
+![version](https://img.shields.io/badge/version-v3.2.0-blue)
 
 **بتعمل إيه:** مستقبِل ويبهوك `inventory_levels/update` من Shopify — بيعمل
 Triple-Check (SKU + GTIN + WordPress Variation Id) وبيحدّث استوك الـ variation
-على `stylebox.online`. والواجهة **قراءة فقط**: سجل كل عملية مزامنة تمّت أو فشلت.
-**مين بيستخدمها:** مخزن · إدارة (عرض السجل بس — مفيش أي تعديل استوك من الواجهة)
-**الإصدار:** Worker `v3.1.0` (`?action=get_config`) · الواجهة `v2.1.0` (شريحة النسخة في الهيدر)
+على `stylebox.online`. والواجهة (تابين): **«📦 مزامنة الاستوك»** — شريط الحالة + **مزامنة شاملة يدوية**
+(`bulk_sync_all`، **جديد v3.2.0**) — و**«📜 سجل العمليات»** (قراءة فقط).
+**مين بيستخدمها:** مخزن · إدارة (السجل + المزامنة الشاملة)
+**الإصدار:** Worker `v3.2.0` (`?action=get_config`) · الواجهة `v2.2.0` (شريحة النسخة في الهيدر)
+
+> 🔴 **العقد اتغيّر 21-11-2026:** الواجهة كانت «قراءة فقط» ومكتوب كده في نافذة «عن الأداة». من v2.2.0
+> فيها **زرار كتابة واحد** (المزامنة الشاملة) بطلب صريح من أحمد — اتوثّق هنا وفي «عن الأداة» **قبل** النشر.
+> أي زرار كتابة تاني = قرار منتج جديد يتوثّق الأول.
 
 > 🟢 **الاشتراك اتنقل لـ Webhook Control Center يوم 10-09-2026.** قبل كده كان
 > ويبهوك متعمول من داشبورد شوبيفاي (Settings → Notifications → Webhooks).
@@ -56,7 +61,9 @@ node check-html.mjs  ← الواجهة: بنية الـ CSS والربط في �
 | المسار / `?action=` | بيعمل إيه | البوابة |
 |---|---|---|
 | `POST /webhook` | استقبال `inventory_levels/update` من Shopify | **قبل** بوابة `WORKER_SECRET` — HMAC بس |
-| `?action=get_config` | إصدار الكود المنشور + وجود الأسرار (بالوجود بس) — الاسم القديم `version` لسه شغّال | `Bearer WORKER_SECRET` |
+| `?action=get_config` | إصدار الكود المنشور + وجود الأسرار (بالوجود بس) + `bulk.pageSize/wpBatchSize` — الاسم القديم `version` لسه شغّال | `Bearer WORKER_SECRET` |
+| `?action=bulk_sync_all` | **(v3.2.0)** صفحة واحدة (٥٠ variant) من المزامنة الشاملة — `cursor` للصفحة الجاية + `employee` للتسجيل. الرد: `ok` · `scanned` · `linked` · `results` (٥ مفردات) · `deferred` · `rateLimited` · `retryAfterSec` · `throttleStatus` · `queryCost` · `hasMore` · `nextCursor` · `done`. لو `rateLimited:true` فـ`nextCursor` = **نفس cursor الصفحة** | `Bearer WORKER_SECRET` |
+| `?action=diag` | فحص ذاتي **بدون كتابة**: الأسرار (أسماء وأطوال) · `LOCATION_ID` · D1 · شوبيفاي OAuth والصلاحيات و`throttleStatus` · endpoint ووردبريس القديم **+ endpoint الدفعات** (`POST variation-stocks` بـ`items:[]` — **400 = شغّال**، `404` = السنيپت لسه ما اتلصقش) | `Bearer WORKER_SECRET` |
 | `?action=get_stats` | شريط الحالة: آخر مزامنة ناجحة · آخر تسليمة ويبهوك · تجميع آخر ٢٤ ساعة | `Bearer WORKER_SECRET` |
 | `check_employee` · `register_pin` · `verify_employee` · `log_logout` · `get_employees` | تسجيل الدخول الموحّد | `Bearer WORKER_SECRET` |
 | `get_logs` · `get_logs_count` · `get_logs_export` | سجل العمليات + التصدير — فلاتر على السيرفر (`types` CSV · `search` · `dateFrom`/`dateTo`)، والتصدير بيرجّع `cap`/`total`/`truncated` | `Bearer WORKER_SECRET` |
@@ -132,9 +139,15 @@ tool  : wp_stock_sync
 type  : synced · not_linked_yet · sku_mismatch · gtin_mismatch ·
         wp_variation_not_found · wp_update_failed · variant_not_found ·
         location_skipped · stale_event_skipped · no_triggered_at_header ·
-        empty_payload_bug · hmac_failed · unexpected_error · login · logout
+        empty_payload_bug · hmac_failed · unexpected_error · login · logout ·
+        rate_limited · no_stock_change_skipped · quantity_unavailable   ← (٣ جداد v3.2.0 — المزامنة الشاملة)
 ```
 
+> ℹ️ **كل صفوف الأداة من v3.2.0 فيها `extra.result` و`extra.stage`** (مفردات `constants` §12) — الويبهوك كمان،
+> مش الشاملة بس. صفوف `no_triggered_at_header` استثناء مقصود (معلوماتي، من غير `result`). الاستعلام الصح لقياس
+> الكتابة المؤكَّدة: `… AND json_extract(extra,'$.result') = 'success'` — مش `type` لوحده.
+> (الصفوف **القديمة** قبل v3.2.0 مالهاش `result` — تتعرض «—» مش «✓».)
+>
 > 🔴 **عشرة من الخمستاشر مش مسجّلين في `ecommoda-constants` §7** (المسجّل هناك:
 > `synced` · `not_linked_yet` · `sku_mismatch` · `unexpected_error` · `login`).
 > مخالفة «التسجيل قبل أول `writeLog`» — وهي **موجودة من قبل النقل**، النقل بس
@@ -151,6 +164,43 @@ wp_stock_sync_state (inventory_item_id TEXT PRIMARY KEY, last_triggered_at TEXT,
 بيمنع حدث قديم (retry أو تسليم out-of-order) من الكتابة فوق قيمة أحدث.
 المقارنة `INSERT .. ON CONFLICT .. WHERE` عملية **ذرّية واحدة** — مش قراءة ثم
 كتابة، فمفيش سباق بين تسليمتين متزامنتين لنفس الـ variant.
+
+## 🔁 المزامنة الشاملة (v3.2.0 · 21-11-2026)
+
+**ليه اتعملت:** الويبهوك بيضيع لو اتّرفض (شوبيفاي مابتعيدش بعد الـ 200) وبيفضل الاستوك مختلف لحد ما الـ variant يتحرّك تاني.
+مفيش وسيلة قبل كده تصلّح انحراف (زي موجة `wp_variation_not_found` في 09-09). نفس فكرة `stylebox_price_sync` → `bulk_sync_all`.
+
+```
+الواجهة  : نداء bulk_sync_all لكل صفحة (٥٠ variant) + cursor + استئناف تلقائي عند 429 + «كمّل من آخر نقطة»
+الـ Worker: productVariants(first:50) → الـ metafield + available على LOCATION_ID → prepareBulkVariant (حراس) →
+            flushStockBatch (دفعات ≤٢٠، فاصل ١٫٥ ث، متتالي) → applyStockBatchResult (صف D1 لكل variant)
+ووردبريس : POST ecommoda/v1/variation-stocks — السيرفر بيعمل triple-check (SKU+GTIN) ويكتب (WC CRUD)
+            ويرجّع نتيجة لكل item بنفس الترتيب: updated|unchanged|sku_mismatch|gtin_mismatch|not_found|bad_request|save_failed
+```
+
+- **ميزانية الـ 429** (`woocommerce-sync-helper` Step 3.5): كان GET+POST لكل variant (٢×N نداء). دلوقتي نداء واحد لكل ≤٢٠
+  variant. الكتالوج ≈ ٥٬٨١٤ variant ← ~١١٧ صفحة؛ المربوط ~١٬٠٢٠ ← **~٥١–١١٧ نداء** (حسب توزيع المربوط على الصفحات) على
+  ~٥–١٠ دقايق ← تحت ٣٠ نداء/دقيقة. أول 429 بجسم فاضي = **circuit breaker** (يوقف، يرجّع الحجوزات، صف `rate_limited` لكل variant،
+  مفيش إعادة جوّه نفس الاستدعاء). النافذة **مشتركة** مع Workers الأسعار والأوردرات — ماتشغّلش شاملة الأسعار والاستوك مع بعض.
+- **حراس الشاملة (نفس الويبهوك بالحرف):** الكمية لازم رقم صالح — `null`/تتبّع مقفول ⇒ `quantity_unavailable` **مش 0** · حارس الموقع
+  (`LOCATION_ID` **إلزامي** للشاملة وغيابه ⇒ 500 باسمه) · حارس الترتيب (`claimIfNewer` بطابع = بداية قراءة الصفحة) · triple-check.
+- **قاعدة عدم الضياع:** صف واحد بالظبط لكل variant **مربوط**. المش مربوط بيتخطّى **بدون** صف (مش بنغرق السجل — `not_linked_yet` للويبهوك).
+- **مفيش كاش «آخر قيمة»** (الأسعار عندها): السيرفر بيقارن بالاستوك الحقيقي وبيرجّع `unchanged` → `no_stock_change_skipped` (`result=already`، عدّاد محايد مش فشل).
+- **الاستوك السالب:** شوبيفاي `available` ممكن تنزل تحت الصفر (أوفرسيلينج). الويبهوك بيبعتها زي ما هي؛ endpoint الدفعات بيقبل **عدد صحيح سالب**
+  لنفس السبب — لو عايز يتمنع، ده قرار منتج يتاخد قبل ما يتغيّر في الاتنين.
+
+### 🔴 ترتيب النشر — اللي لازم يتعمل **بالترتيب**
+
+1. **الصق `wordpress/variation-stocks-snippet.php` على ووردبريس الأول** (WPCode → `EcomModa – MCP Abilities`، **جوّه نفس** `rest_api_init` بتاع route
+   `variation-stock/{id}`، من غير `<?php`). ✅ السنيپت بيعتمد على `$permission_check` — اتأكد (21-11-2026) من كود «Variation Stock Sync API» الحالي إنه موجود بنفس الاسم وبيفحص `X-EcomModa-Secret`.
+   ولو اتلصق برّه الـ closure الـ route بيرد 401 دايمًا (fail-closed).
+2. بعدين نشر الـ Worker (push على `main`) والواجهة.
+3. 🩺 فحص النظام → لازم يطلع `WooCommerce batch endpoint ✅ (400)` و`LOCATION_ID` مضبوط.
+4. شغّل شاملة **صفحة واحدة الأول** (إيقاف بعد أول صفحة) وراجع الصفوف في D1، وبعدين الكاملة.
+
+```sql
+SELECT type, json_extract(extra,'$.result') AS result, COUNT(*) AS n, MAX(timestamp) AS last_ts FROM logs WHERE tool = 'wp_stock_sync' AND json_extract(extra,'$.origin') = 'bulk_sync' GROUP BY type, result ORDER BY n DESC;
+```
 
 ## المضبوط فعليًا في الداشبورد
 
@@ -236,7 +286,11 @@ location_skipped           0   ← صفر متوقّع (موقع واحد) — �
 **إثبات نقل الويبهوك تحديدًا** (غير الاستعلام فوق): أي صف جديد لازم يكون
 `extra.signedWith = 'CLIENT_SECRET'` — الاستعلام في «نظام الويبهوك».
 
-## الواجهة (اتبنت من أول وجديد — 10-09-2026)
+## الواجهة (اتبنت من أول وجديد — 10-09-2026 · تابين من 21-11-2026)
+
+> **v2.2.0:** الشاشة بقت تابين (`.main-tabs-bar`): «📦 مزامنة الاستوك» (شريط الحالة + شرح + المزامنة الشاملة) و«📜 سجل العمليات»
+> (السجل بيتحمّل lazy أول مرة التاب يتفتح). نافذة تأكيد بتسمّي الأثر قبل الشاملة، قفل نقط التعديل أثناءها (`setUpdateLock`)،
+> والخروج التلقائي مقفول طول ما هي شغّالة. نقطة الاستئناف في الذاكرة بس (refresh بيمسحها — مقصود).
 
 النسخة القديمة كانت جدول HTML بسيط بلا App Shell ولا نافذة «عن الأداة» ولا
 سجل تحديثات ولا رقم نسخة، وفلترتها في المتصفح. اتبنت من جديد على
@@ -330,6 +384,21 @@ index.html نفس الـ blob SHA بتاع Index.html القديم في commit e
 > كلاودفلير وقتها — الكوميتات فوق هي مرجع «النسخة الأصلية» لو احتجت
 > ترجعلها، مش وصف للملف الحالي.
 
+## مواءمة 21-11-2026 — Worker v3.2.0 · الواجهة v2.2.0 (المزامنة الشاملة + تابين)
+
+> مقارنة بـ `Stylebox-Price-Sync` v1.4.0 (النمط المرجعي) وبإصدارات المهارات الحالية. `node test.mjs` — **كل الفحوص عدّت** (قسم ١٧ جديد: ٣٠ حالة) و`check-html.mjs` و`check-log-values.mjs` exit 0.
+
+| الحاجة | قبل | بعد |
+|---|---|---|
+| مزامنة يدوية | مفيش — الواجهة «قراءة فقط» | `bulk_sync_all` + تاب «مزامنة الاستوك» (نفس تصميم الأسعار) |
+| نداءات ووردبريس للشاملة | — | endpoint دفعات `variation-stocks` (١ لكل ≤٢٠ بدل ٢ لكل variant) + circuit breaker عند 429 (Step 3.5 قواعد ٤–٧) |
+| صفوف D1 | بلا `extra.result`/`stage` | كلها فيها `result`/`stage` (+ `origin:'bulk_sync'` للشاملة) — Step 5A ④ ⑭ |
+| `log-values.json` | `result:null` لكل القيم | `result`/`stage` مكتوبين + ٣ أنواع جديدة + `logAnchors:["log"]` (الأنكور المحلي في `prepareBulkVariant`) |
+| `diag` | endpoint ووردبريس القديم بس | + endpoint الدفعات (400 = شغّال) |
+| `get_config` | version + env | + `bulk.pageSize/wpBatchSize` |
+| الواجهة | صفحة واحدة، «عرض فقط» | تابين · نافذة تأكيد بالأثر · عدّادات النتايج الخمسة · استئناف عند 429 · About/Changelog محدّثين |
+| `MIN_WORKER_VERSION` | `3.1.0` | `3.2.0` (الواجهة بتعتمد على `bulk_sync_all`) |
+
 ## مواءمة 18-11-2026 — Worker v3.1.0 · الواجهة v2.1.0
 
 > مواءمة مع المهارات الحالية. `node test.mjs` — **كل الفحوص عدّت** (اتزاد قسم ١٦ بخمس حالات جديدة).
@@ -348,16 +417,23 @@ index.html نفس الـ blob SHA بتاع Index.html القديم في commit e
 
 | المهارة | الإصدار وقت آخر تعديل |
 |---|---|
-| ecommoda-worker-builder | v4.0.0 |
-| ecommoda-constants | v6.0.0 |
-| woocommerce-sync-helper | v2.1.0 |
-| shopify-graphql-helper | v3.0.1 |
+| ecommoda-worker-builder | v4.2.0 |
+| ecommoda-constants | v6.0.1 |
+| woocommerce-sync-helper | v2.2.0 |
+| shopify-graphql-helper | v3.2.0 |
 | shopify-webhook-helper | v1.0.0 |
-| ecommoda-html-builder | v9.1.0 |
+| ecommoda-html-builder | v9.1.1 |
 
-آخر مطابقة: 18-11-2026 · `index.js` v3.1.0 · `index.html` v2.1.0
+> `ecommoda-constants` v6.0.1: الرقم من بصمة `Stylebox-Price-Sync` (19-11-2026) — ماتقرتش المهارة نفسها في جلسة 21-11، والمفردات (§12) المستخدمة هنا هي نفس اللي في الأسعار.
+> `shopify-webhook-helper` v1.0.0: ماتلمسش مسار الويبهوك في الجولة دي (غير إضافة `result`/`stage` على الصفوف) — الرقم مش متراجع.
+
+آخر مطابقة: 21-11-2026 · `index.js` v3.2.0 · `index.html` v2.2.0
 
 🔴 معلّقة:
+- 🔴 **سنيپت `variation-stocks` لسه ما اتلصقش على ووردبريس** (الريبو فيه الملف: `wordpress/variation-stocks-snippet.php`). من غيره المزامنة الشاملة بتفشل بأول دفعة برسالة صريحة ⇒ **يتلصق قبل أول تشغيل** (ترتيب النشر فوق).
+- ⚠️ **تكلفة استعلام الشاملة على شوبيفاي مقدّرة مش مقيسة** (~٥ نقط/variant ⇒ ~٢٥٠ للصفحة، أقل من ٧٠٠). أول تشغيل بيرجّع `queryCost` و`throttleStatus` في الرد — لو `actualQueryCost` طلع أعلى بكتير، `BULK_SYNC_PAGE_SIZE = floor(700 ÷ التكلفة للـ variant)` (والاستعلام نفسه اتجرّب على Shopify MCP/`2026-10` وصالح).
+- ⚠️ **اختبار حي بعد النشر (v3.2.0):** 🩺 فحص النظام ← `WooCommerce batch endpoint ✅` ← شاملة صفحة واحدة ← صف `synced` + مطابقة الكمية على الموقع ← الكاملة. وارجع للاستعلام فوق. ماتشغّلش شاملة الأسعار والاستوك في نفس الوقت (نافذة 429 مشتركة).
+- 🟡 **الاستوك السالب** يتبعت زي ما هو (ويبهوك وشاملة) — لو عايزه يتقفل عند صفر، قرار منتج.
 - 🟡 **شاشة السجل لسه على الشكل القديم (قسم فلاتر فوق الجدول — `S47`) ومن غير تحكم في عرض الأعمدة (`S51`)** — معيار الجداول الجديد (فلاتر في رأس العمود + قايمة `position:fixed` + مقبض سحب العرض، `data-table-standard.md` §2 و§9ب) إعادة تصميم كبيرة لشاشة تشغيل حيّة. اتأجّلت **بقرار مقصود** 18-11-2026 (المهارة نفسها بتصنّفها 🟡 «عند أول فتح، مش في حملة») عشان ما تتغيّرش من غير مراجعة بصرية حقيقية. تتعمل في جلسة مخصصة بـ `templates/24_data-table-section.html` + اختبار Playwright.
 - 🟡 **Build watch paths** (chip لـ`index.js` وchip منفصل لـ`wrangler.toml`) — إعداد في داشبورد Cloudflare مش في الريبو، ماتأكدش منه من الجلسة دي.
 - ✅ **اتقفل 18-11-2026:** «عشر قيم `type` غير مسجّلة في `ecommoda-constants` §7» — البند ده كان قبل `constants` v3.0.0؛ السجل بقى `log-values.json` جنب الكود و`node check-log-values.mjs` بيرجّع exit 0 على كل القيم.
@@ -428,15 +504,11 @@ index.html نفس الـ blob SHA بتاع Index.html القديم في commit e
   عند شوبيفاي (مافيش metafields في الـ payload)، فالحل لو اتقرر: خنق
   التسجيل في الكود (سجّل مرة واحدة لكل variant لحد ما حالة الربط تتغيّر).
   **ما اتعملش** — بيقلّل قابلية الملاحظة، ومحتاج قرار.
-- **مافيش إعادة مزامنة يدوية.** `stylebox_price_sync` عنده
-  `?action=bulk_sync_all`؛ الأداة دي لأ. يعني أي انحراف (زي موجة
-  `wp_variation_not_found` الحالية) مالوش طريقة إصلاح غير انتظار تغيير
-  مخزون جديد لكل variant. **مقصود إنه ما اتعملش** — الواجهة متعاقَد
-  عليها «قراءة فقط» ومكتوبة كده في نافذة «عن الأداة»، وإضافة زرار كتابة
-  قرار منتج. لو اتقرر يتعمل، لازم يتوثّق في العقد ده الأول.
+- ✅ **اتقفل 21-11-2026:** «مافيش إعادة مزامنة يدوية» — اتضافت المزامنة الشاملة (`bulk_sync_all`) بطلب صريح من أحمد، والعقد اتحدّث
+  في أول الملف وفي «عن الأداة». ⚠️ **الشاملة مابتصلحش** عطل ووردبريس 404 لو لسه قايم — هتطلّع `wp_variation_not_found`/`sku_mismatch` صفوف بدل ما تخبّيهم.
 - **إعادة تسمية الـ Worker** مؤجَّلة بقرار المشروع (§1 قرار ٦).
 
 
-آخر تحديث: 18-11-2026 — 23:51 — مواءمة مع المهارات الحالية (API 2026-10 · diag · ترتيب السيرفر · خروج تلقائي)
+آخر تحديث: 21-11-2026 — 10:43 — v3.2.0: المزامنة الشاملة (bulk_sync_all) + endpoint الدفعات + تابين + result/stage على كل الصفوف
 
 </div>

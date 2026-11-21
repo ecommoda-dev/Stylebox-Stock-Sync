@@ -2,10 +2,10 @@
 
 # Stylebox-Stock-Sync
 
-![version](https://img.shields.io/badge/version-v3.1.0-blue)
+![version](https://img.shields.io/badge/version-v3.2.0-blue)
 
 مزامنة استوك Shopify → WooCommerce (`stylebox.online`) عن طريق ويبهوك
-`inventory_levels/update`، وواجهة **قراءة فقط** لعرض سجل كل عملية مزامنة.
+`inventory_levels/update` + **مزامنة شاملة يدوية** (`bulk_sync_all`)، وواجهة بتابين: مزامنة الاستوك وسجل كل عملية.
 
 > الاشتراك متسجّل من **Webhook Control Center** (عبر الـ API) — مش من
 > داشبورد شوبيفاي. يعني مش هيظهر في Settings → Notifications → Webhooks،
@@ -21,7 +21,9 @@
 ```
 index.js       ← كود الـ Worker (مصدر النشر — Workers Builds)
 wrangler.toml  ← اسم الـ Worker + D1 binding + vars
-index.html     ← الواجهة (GitHub Pages)
+index.html     ← الواجهة (GitHub Pages) — تابين: مزامنة الاستوك · سجل العمليات
+wordpress/variation-stocks-snippet.php ← سنيپت WPCode لـ endpoint الدفعات (بيتلصق **قبل** نشر الـ Worker)
+log-values.json · check-log-values.mjs ← سجل قيم اللوج وفحصه
 test.mjs       ← اختبارات الـ Worker — `node test.mjs`
 check-html.mjs ← فحص بنية الواجهة — `node check-html.mjs`
 CLAUDE.md      ← قواعد الأداة وفخاخها — اقراه قبل أي تعديل
@@ -47,6 +49,6 @@ Cloudflare بعد الربط** — الريبو هو المصدر الوحيد.
 
 التفاصيل والفخاخ → `CLAUDE.md`.
 
-آخر تحديث: 18-11-2026 — 23:51
+آخر تحديث: 21-11-2026 — 10:43
 
 </div>

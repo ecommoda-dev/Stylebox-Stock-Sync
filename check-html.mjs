@@ -1,5 +1,5 @@
 // EcomModa — Stylebox Stock Sync · فحص الواجهة قبل التسليم
-// skills: html-builder v7.0.0 — 10-09-2026
+// skills: html-builder v9.1.1 — 21-11-2026
 //
 // التشغيل:  node check-html.mjs        (بلا أي تنصيب)
 //
