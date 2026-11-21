@@ -1,11 +1,11 @@
 // EcomModa — Stylebox Stock Sync (Worker)
-// skills: worker-builder v4.0.0 · html-builder v9.1.0 · constants v6.0.0 · woocommerce-sync-helper v2.1.0 · shopify-graphql-helper v3.0.1 · shopify-webhook-helper v1.0.0 — 18-11-2026
+// skills: worker-builder v4.2.0 · html-builder v9.1.1 · constants v6.0.1 · woocommerce-sync-helper v2.2.0 · shopify-graphql-helper v3.2.0 · shopify-webhook-helper v1.0.0 — 21-11-2026
 // ══════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════
 // §CONSTANTS
 // ══════════════════════════════════════════════════════
 const TOOL_NAME = 'wp_stock_sync';
-const TOOL_VERSION = '3.1.0';
+const TOOL_VERSION = '3.2.0';
 const LOG_EXPORT_MAX = 2000;   // سقف التصدير — بيرجع للواجهة كـ `cap` عشان
                                // تعرف إن الملف اتقص بدل ما تقول «تم ✓» على ناقص
 const API_VERSION = '2026-10';   // اتفحص على Shopify MCP 18-11-2026 — inventoryItem.variants سليم
@@ -22,6 +22,30 @@ const API_VERSION = '2026-10';   // اتفحص على Shopify MCP 18-11-2026 —
 // من الداشبورد — راجع «إسقاط السر القديم» في CLAUDE.md.
 const WEBHOOK_SECRET_VARS = ['CLIENT_SECRET', 'SHOPIFY_WEBHOOK_SECRET'];
 
+// ─── §CONSTANTS::bulk — المزامنة الشاملة (v3.2.0) ───
+// سلسلة السقوف التلاتة — التلاتة مع بعض، ولا واحد يتغيّر لوحده
+// (worker-builder Step 5A ⑪ — ممنوع يتقال رقم منهم لوحده)
+// ① الواجهة       مفيش CHUNK: الواجهة بتنده **صفحة واحدة** في كل نداء والـ cursor
+//                 بيمسك المكان، فالـ pagination نفسه هو التقسيم.
+// ② الـ Worker    BULK_SYNC_PAGE_SIZE = 50 ← حارس **وقت**: ٥٠ variant، والمربوط
+//                 منهم (٩ في المتوسط — ~١٬٠٢٠ من ~٥٬٨١٤، قياس الواجهة 20-11-2026)
+//                 بياخد نداء WooCommerce واحد أو أكتر (دفعات ٢٠)، لازم يخلّصوا جوّه
+//                 مهلة الواجهة (API_TIMEOUT_MS = 90 ث).
+// ③ شوبيفاي       التكلفة: productVariants(first:50) + metafield + inventoryItem +
+//                 inventoryLevel(locationId) ≈ ٥ نقط للـ variant (تقدير مش مقيس).
+//                 الميزانية الآمنة ٧٠٠ (constants §1). **القياس الفعلي** بيرجع في
+//                 `queryCost` في رد bulk_sync_all وفي diag — ولو طلع أعلى بكتير
+//                 من التقدير، اتحسب `floor(700 ÷ actualQueryCost للـ variant)` وعدّل.
+const BULK_SYNC_PAGE_SIZE = 50;
+
+// ─── سقف الـ 429 — ميزانية النداءات (woocommerce-sync-helper Step 3.5) ───
+// نافذة متحركة ≈ ٣٠ نداء / ٣٠–٦٠ ث على stylebox.online، **مشتركة بين كل الـ Workers**
+// (استوك · أسعار · أوردرات). endpoint الدفعات: نداء واحد لكل ≤٢٠ variant بدل
+// نداءين (GET+POST) لكل variant — الـ triple-check بيحصل على سيرفر ووردبريس.
+const WP_BATCH_SIZE   = 20;    // عدد الـ items في النداء الواحد (حد السيرفر الأقصى ٥٠)
+const WP_BATCH_GAP_MS = 1500;  // فاصل بين دفعتين متتاليتين — متوازي ممنوع (الموقع بيرجّع 500)
+const RATE_LIMIT_DEFAULT_RETRY_SEC = 120;  // لو Retry-After غايب: النافذة بتفضى بعد ~١٫٥–٢ دقيقة سكون
+
 // ════════════════════════════════════════════════════════════
 // §LOG-REG — الحارس الديناميكي لقيم اللوج (الطبقة ٥)
 // ════════════════════════════════════════════════════════════
@@ -35,6 +59,7 @@ const LOG_REGISTRY = {
     'location_skipped', 'no_triggered_at_header', 'not_linked_yet',
     'sku_mismatch', 'stale_event_skipped', 'synced', 'unexpected_error',
     'variant_not_found', 'wp_update_failed', 'wp_variation_not_found',
+    'rate_limited', 'no_stock_change_skipped', 'quantity_unavailable',
   ]),
 };
 
@@ -111,6 +136,18 @@ function json(data, status = 200, request = null) {
   Object.assign(headers, request ? getCORS(request) : { 'Access-Control-Allow-Origin': '*' });
   return new Response(JSON.stringify(data), { status, headers });
 }
+
+// ── §HELPERS::safeWriteLog ──
+// 🔴 فشل D1 مايتبلعش (Step 5A ⑦). بيرجّع false عشان المنادي يقدر يرجّعه للواجهة.
+async function safeWriteLog(db, entry) {
+  try { await writeLog(db, entry); return true; }
+  catch (e) {
+    console.error('[writeLog FAILED]', entry.tool, entry.type, entry.sku || '', e.message);
+    return false;
+  }
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── §HELPERS::safeEqual ──
 // مقارنة ثابتة الزمن — `===` على الـ digest بيسرّب معلومات توقيت.
@@ -538,6 +575,58 @@ async function wcUpdateVariationStock(env, variationId, quantity) {
   return body;
 }
 
+// ── §WOOCOMMERCE::wcBatchUpdateStock — endpoint الدفعات (v3.2.0) ──
+// POST /wp-json/ecommoda/v1/variation-stocks   (المزامنة الشاملة بس — الويبهوك لسه
+// على variation-stock/{id} بنداءين لأن حدث واحد = variant واحد، مش دفعة)
+//   body : { items: [{ variation_id, expected_sku, expected_gtin, quantity }] }  (≤ ٥٠، الـ Worker بيبعت ٢٠)
+//   reply: { success, summary, results[] } — **بنفس ترتيب المدخلات** (+ index)
+//          status: updated | unchanged | sku_mismatch | gtin_mismatch | not_found | bad_request | save_failed
+//          (HTTP 200 حتى لو فيه items فاشلة — الفشل الجزئي مش خطأ HTTP)
+// السيرفر بيعمل triple-check (SKU + GTIN) ويكتب، فمفيش GET-ثم-POST لكل variant:
+// ٤٠ variant = نداءين بدل ٨٠ (woocommerce-sync-helper Step 3.5 قاعدة ٦).
+// الكود: wordpress/variation-stocks-snippet.php
+class RateLimitError extends Error {
+  constructor(retryAfterSec) {
+    super('WP rate-limited (429)');
+    this.name = 'RateLimitError';
+    this.retryAfterSec = retryAfterSec;   // null لو Retry-After غايب
+  }
+}
+
+async function wcBatchUpdateStock(env, items) {
+  const res = await fetch(
+    `${String(env.WP_BASE_URL).replace(/\/$/, '')}/wp-json/ecommoda/v1/variation-stocks`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-EcomModa-Secret': env.WP_SYNC_SECRET },
+      body: JSON.stringify({ items }),
+    }
+  );
+  const text = await res.text();
+  if (res.status === 429) {
+    // 429 بجسم **فاضي** = سقف الاستضافة (اتقفل قبل ما PHP يشتغل) → circuit breaker.
+    // 429 بجسم JSON = حاجة تانية (بلجن/ووكومرس) → خطأ عادي، مش rate limit.
+    if (!text.trim()) {
+      const ra = parseInt(res.headers.get('Retry-After') || '', 10);
+      throw new RateLimitError(Number.isFinite(ra) ? ra : null);
+    }
+    throw new Error(`WP batch failed: 429 ${text.slice(0, 300)}`);
+  }
+  if (res.status === 404) {
+    let code = '';
+    try { code = (JSON.parse(text) || {}).code || ''; } catch { /* مش JSON */ }
+    if (code === 'rest_no_route' || code === 'rest_not_found') {
+      throw new Error('endpoint الدفعات (variation-stocks) مش موجود على WordPress — السنيپت لسه ما اتلصقش (wordpress/variation-stocks-snippet.php)');
+    }
+  }
+  if (!res.ok) throw new Error(`WP batch failed: ${res.status} ${text.slice(0, 300)}`);
+  let body;
+  try { body = JSON.parse(text); }
+  catch { throw new Error(`WP batch: رد مش JSON — ${text.slice(0, 200)}`); }
+  if (!body || !Array.isArray(body.results)) throw new Error('WP batch: الرد من غير results[]');
+  return body;
+}
+
 // ══════════════════════════════════════════════════════
 // §ORDERING-GUARD
 // جدول حالة صغير — مش جدول mapping (مفيش SKU/variant اتخزن هنا،
@@ -670,6 +759,18 @@ export default {
         return json({ ok: true }, 200, request);
       }
 
+      // ─── §BULK-SYNC ─────────────────────────────────────────
+      // صفحة واحدة لكل نداء — الواجهة بتنده تاني بالـ cursor الراجع لحد hasMore:false.
+      // 🔴 الأداة كانت «قراءة فقط» — ده أول endpoint كتابة بيتفعّل من الواجهة (قرار
+      //    أحمد 21-11-2026). محمي بنفس WORKER_SECRET، والكتابة نفسها على
+      //    WooCommerce بتعدّي على نفس triple-check بتاع الويبهوك.
+      if (action === 'bulk_sync_all') {
+        const cursor = url.searchParams.get('cursor') || null;
+        const employee = url.searchParams.get('employee') || null;
+        const result = await runBulkSyncPage(env, cursor, employee);
+        return json({ ok: true, ...result }, 200, request);
+      }
+
       // ── §DIAG — فحص ذاتي **بدون أي كتابة**. ⚠️ ممنوع يرجّع قيمة أي سر: أسماء وأطوال بس.
       //    الشكل المعتمد: مصفوفة [{ ok, label, detail }] (worker-builder Step 5A ⑨)
       if (action === 'diag') {
@@ -724,6 +825,21 @@ export default {
           else add(true, 'WooCommerce endpoint', `HTTP ${res.status} (المتوقع 404 على variation وهمي)`);
         } catch (e) { add(false, 'WooCommerce endpoint', `تعذّر الوصول: ${e.message}`); }
 
+        // endpoint الدفعات (v3.2.0) — POST بـ items:[] **بدون أي كتابة**.
+        // 400 = الـ route شغّال والسر مقبول · 404 = السنيپت لسه ما اتلصقش · 401/403 = السر غلط · 429 = سقف الاستضافة
+        try {
+          const res = await fetch(`${String(env.WP_BASE_URL || '').replace(/\/$/, '')}/wp-json/ecommoda/v1/variation-stocks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-EcomModa-Secret': env.WP_SYNC_SECRET || '' },
+            body: JSON.stringify({ items: [] }),
+          });
+          if (res.status === 400) add(true, 'WooCommerce batch endpoint', '400 على items فاضية = route الدفعات شغّال والسر مقبول');
+          else if (res.status === 404) add(false, 'WooCommerce batch endpoint', '404 — سنيپت الدفعات (variation-stocks) لسه ما اتلصقش على WordPress — المزامنة الشاملة مش هتشتغل');
+          else if (res.status === 401 || res.status === 403) add(false, 'WooCommerce batch endpoint', `${res.status} — WP_SYNC_SECRET مرفوض من WordPress`);
+          else if (res.status === 429) add(false, 'WooCommerce batch endpoint', '429 — سقف الاستضافة (استنى ~دقيقتين وأعد الفحص)');
+          else add(false, 'WooCommerce batch endpoint', `HTTP ${res.status} (المتوقع 400 على items فاضية)`);
+        } catch (e) { add(false, 'WooCommerce batch endpoint', `تعذّر الوصول: ${e.message}`); }
+
         return json({ ok: checks.every(c => c.ok), checks }, 200, request);
       }
 
@@ -739,6 +855,7 @@ export default {
           version: TOOL_VERSION,
           logExportMax: LOG_EXPORT_MAX,
           apiVersion: API_VERSION,
+          bulk: { pageSize: BULK_SYNC_PAGE_SIZE, wpBatchSize: WP_BATCH_SIZE },
           webhookPath: '/webhook',
           env: {
             LOCATION_ID: env.LOCATION_ID || null,
@@ -892,7 +1009,7 @@ async function handleShopifyWebhook(request, env, ctx) {
       type: 'hmac_failed',
       notes: 'فشل التحقق من HMAC — جرّبنا CLIENT_SECRET والقديم SHOPIFY_WEBHOOK_SECRET والاتنين ما طابقوش',
       extra: {
-        webhookId, eventId, topic, triggeredAt,
+        result: 'error', stage: 'lookup', webhookId, eventId, topic, triggeredAt,
         hmacHeaderPresent: !!hmacHeader,
         bodyBytes: rawBody.length,
         secretsTried: WEBHOOK_SECRET_VARS.filter((n) => !!env[n]),
@@ -918,7 +1035,7 @@ async function handleShopifyWebhook(request, env, ctx) {
         tool: TOOL_NAME,
         type: 'unexpected_error',
         notes: e.message || String(e),
-        extra: { webhookId, eventId, topic, triggeredAt, signedWith },
+        extra: { result: 'error', stage: 'lookup', webhookId, eventId, topic, triggeredAt, signedWith },
       }).catch(() => {})
     )
   );
@@ -945,7 +1062,7 @@ async function processInventoryWebhook(env, payload, meta) {
       tool: TOOL_NAME,
       type: 'empty_payload_bug',
       notes: 'Payload وصل فاضي من Shopify (بج معروف API 2026-01) — تعذّر معرفة أي variant اتغير',
-      extra: { ...source, triggeredAt },
+      extra: { result: 'rejected', stage: 'lookup', ...source, triggeredAt },
     });
     return;
   }
@@ -965,7 +1082,7 @@ async function processInventoryWebhook(env, payload, meta) {
       tool: TOOL_NAME,
       type: 'empty_payload_bug',
       notes: `الكمية (available) وصلت غير صالحة من Shopify: ${JSON.stringify(payload.available)} — اتوقف قبل الكتابة على WooCommerce`,
-      extra: { ...source, inventoryItemId, locationId, available, triggeredAt },
+      extra: { result: 'rejected', stage: 'lookup', ...source, inventoryItemId, locationId, available, triggeredAt },
     });
     return;
   }
@@ -980,7 +1097,7 @@ async function processInventoryWebhook(env, payload, meta) {
       tool: TOOL_NAME,
       type: 'location_skipped',
       notes: `location_id (${locationId}) مختلف عن LOCATION_ID المتوقع`,
-      extra: { ...source, inventoryItemId, locationId, available },
+      extra: { result: 'rejected', stage: 'lookup', ...source, inventoryItemId, locationId, available },
     });
     return;
   }
@@ -999,7 +1116,7 @@ async function processInventoryWebhook(env, payload, meta) {
         tool: TOOL_NAME,
         type: 'stale_event_skipped',
         notes: 'الحدث ده أقدم من (أو مساوي لـ) آخر حدث اتعالج لنفس الـ variant — تم التجاهل لمنع الكتابة فوق قيمة أحدث',
-        extra: { ...source, inventoryItemId, locationId, available, triggeredAt },
+        extra: { result: 'rejected', stage: 'lookup', ...source, inventoryItemId, locationId, available, triggeredAt },
       });
       return;
     }
@@ -1012,7 +1129,7 @@ async function processInventoryWebhook(env, payload, meta) {
       tool: TOOL_NAME,
       type: 'no_triggered_at_header',
       notes: 'X-Shopify-Triggered-At مش موجود — تم التنفيذ من غير ordering guard',
-      extra: { ...source, inventoryItemId, locationId, available },
+      extra: { stage: 'lookup', ...source, inventoryItemId, locationId, available },
     });
   }
 
@@ -1036,7 +1153,7 @@ async function processInventoryWebhook(env, payload, meta) {
         tool: TOOL_NAME,
         type: 'variant_not_found',
         notes: 'مفيش variant مرتبط بالـ inventory_item_id ده على Shopify',
-        extra: { ...source, inventoryItemId, locationId, available },
+        extra: { result: 'rejected', stage: 'lookup', ...source, inventoryItemId, locationId, available },
       });
       return;
     }
@@ -1047,7 +1164,7 @@ async function processInventoryWebhook(env, payload, meta) {
         type: 'not_linked_yet',
         sku: variant.sku,
         notes: 'الـ variant ده لسه من غير WordPress Variation Id metafield',
-        extra: { ...source, inventoryItemId, variantId: variant.variantId, locationId, available },
+        extra: { result: 'rejected', stage: 'lookup', ...source, inventoryItemId, variantId: variant.variantId, locationId, available },
       });
       return;
     }
@@ -1060,7 +1177,7 @@ async function processInventoryWebhook(env, payload, meta) {
         type: 'wp_variation_not_found',
         sku: variant.sku,
         notes: `WordPress Variation Id (${variant.wordpressVariationId}) مش موجود على WordPress`,
-        extra: { ...source, inventoryItemId, variantId: variant.variantId, wordpressVariationId: variant.wordpressVariationId, locationId, available },
+        extra: { result: 'rejected', stage: 'lookup', ...source, inventoryItemId, variantId: variant.variantId, wordpressVariationId: variant.wordpressVariationId, locationId, available },
       });
       return;
     }
@@ -1075,7 +1192,7 @@ async function processInventoryWebhook(env, payload, meta) {
         type: 'sku_mismatch',
         sku: variant.sku,
         notes: `SKU مختلف — Shopify: "${variant.sku}" | WordPress: "${wp.sku}"`,
-        extra: { ...source, inventoryItemId, variantId: variant.variantId, wordpressVariationId: variant.wordpressVariationId, locationId, available },
+        extra: { result: 'rejected', stage: 'lookup', ...source, inventoryItemId, variantId: variant.variantId, wordpressVariationId: variant.wordpressVariationId, locationId, available },
       });
       return;
     }
@@ -1086,7 +1203,7 @@ async function processInventoryWebhook(env, payload, meta) {
         type: 'gtin_mismatch',
         sku: variant.sku,
         notes: `GTIN لا يطابق Variant ID — WordPress GTIN: "${wp.gtin}" | متوقع: "${variant.variantId}"`,
-        extra: { ...source, inventoryItemId, variantId: variant.variantId, wordpressVariationId: variant.wordpressVariationId, locationId, available },
+        extra: { result: 'rejected', stage: 'lookup', ...source, inventoryItemId, variantId: variant.variantId, wordpressVariationId: variant.wordpressVariationId, locationId, available },
       });
       return;
     }
@@ -1104,7 +1221,7 @@ async function processInventoryWebhook(env, payload, meta) {
         valueAfter: available,
         notes: `تمّت مزامنة الاستوك بنجاح (${Date.now() - startedAt}ms)`,
         extra: {
-          ...source,
+          result: 'success', stage: 'write', ...source,
           inventoryItemId, variantId: variant.variantId,
           wordpressVariationId: variant.wordpressVariationId,
           locationId, wcResult: result,
@@ -1119,7 +1236,7 @@ async function processInventoryWebhook(env, payload, meta) {
         valueBefore: wp.stock_quantity,
         valueAfter: available,
         notes: `فشل تحديث WordPress: ${wpErr.message}`,
-        extra: { ...source, inventoryItemId, variantId: variant.variantId, wordpressVariationId: variant.wordpressVariationId, locationId, claimReleased: !!claimedTriggeredAt },
+        extra: { result: 'error', stage: 'write', ...source, inventoryItemId, variantId: variant.variantId, wordpressVariationId: variant.wordpressVariationId, locationId, claimReleased: !!claimedTriggeredAt },
       });
     }
 
@@ -1132,7 +1249,308 @@ async function processInventoryWebhook(env, payload, meta) {
       tool: TOOL_NAME,
       type: 'unexpected_error',
       notes: e.message || String(e),
-      extra: { ...source, inventoryItemId, locationId, available, claimReleased: !!claimedTriggeredAt },
+      extra: { result: 'error', stage: 'lookup', ...source, inventoryItemId, locationId, available, claimReleased: !!claimedTriggeredAt },
     });
   }
+}
+
+// ══════════════════════════════════════════════════════
+// §BULK-SYNC — المزامنة الشاملة (v3.2.0)
+// ══════════════════════════════════════════════════════
+// صفحة واحدة (BULK_SYNC_PAGE_SIZE variant) من كل الكتالوج، بتقرا الكمية
+// `available` على LOCATION_ID **مباشرةً** من شوبيفاي (مش من payload ويبهوك)، وبتبعت
+// المربوطين على WooCommerce دفعات ≤ WP_BATCH_SIZE (نداء واحد لكل دفعة).
+//
+// ⚠️ نفس حراس الويبهوك بالحرف: الكمية لازم تكون رقم صالح (مش null ← مش تصفير)،
+//    حارس الموقع (LOCATION_ID **إلزامي** هنا — من غيره مفيش كمية نقراها)، حارس
+//    الترتيب، والـ triple-check SKU+GTIN (على سيرفر ووردبريس).
+//
+// ⚠️ **قاعدة عدم الضياع:** لكل variant **مربوط** صف واحد بالظبط في D1. المش مربوط
+//    بيتخطّى بلا صف (عشان منغرقش السجل بآلاف not_linked_yet — الويبهوك هو اللي
+//    بيسجّله). والمؤجّل بسبب 429 بياخد `rate_limited` (warning) والصفحة بتتعاد.
+//
+// 🔴 429 بجسم فاضي = سقف الاستضافة → circuit breaker: بيوقف الدورة، بيرجّع الحجوزات،
+//    ومفيش إعادة محاولة جوّه نفس الاستدعاء. `nextCursor` = **نفس cursor الصفحة**
+//    والواجهة بتعيدها بعد الانتظار.
+const BULK_VARIANTS_QUERY = `
+  query BulkStock($cursor: String, $loc: ID!) {
+    productVariants(first: ${BULK_SYNC_PAGE_SIZE}, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      edges {
+        node {
+          id
+          sku
+          metafield(namespace: "custom", key: "wordpress_variation_id") { value }
+          inventoryItem {
+            id
+            tracked
+            inventoryLevel(locationId: $loc) { quantities(names: ["available"]) { name quantity } }
+          }
+        }
+      }
+    }
+  }`;
+
+// ── §BULK-SYNC::prepareBulkVariant ── صفر نداءات WordPress هنا.
+// بترجّع { done: 'rejected' } (الصف اتكتب خلاص) أو { pending } (جاهز للدفعة).
+async function prepareBulkVariant(env, node, ctx) {
+  const { batchTag, startedAt, employee } = ctx;
+  const variantId = String(node.id || '').split('/').pop();
+  const inventoryItemId = String(node.inventoryItem?.id || '').split('/').pop();
+  const sku = node.sku || null;
+  const wordpressVariationId = node.metafield?.value;
+  let logged = true;
+
+  const log = async (entry) => {
+    const ok = await safeWriteLog(env.DB, { tool: TOOL_NAME, sku, employee, ...entry });
+    if (!ok) logged = false;
+    return ok;
+  };
+  const base = { origin: 'bulk_sync', webhookId: batchTag, eventId: batchTag, variantId, inventoryItemId, wordpressVariationId, locationId: String(env.LOCATION_ID) };
+
+  // ── حارس الموقع + الكمية — نفس منطق quantityGuard في الويبهوك ──
+  const level = node.inventoryItem?.inventoryLevel;
+  if (!level) {
+    await log({
+      type: 'location_skipped',
+      notes: `الـ variant مالوش inventoryLevel على الموقع ${env.LOCATION_ID} — مفيش كمية نزامنها`,
+      extra: { result: 'rejected', stage: 'lookup', ...base },
+    });
+    return { done: 'rejected' };
+  }
+  // 🔴 التتبّع مقفول = الكمية مالهاش معنى. من غير الحارس ده كنا هنبعت 0 ونصفّر منتج شغّال.
+  const available = node.inventoryItem?.tracked === false
+    ? null
+    : toQuantity((level.quantities || []).find(q => q.name === 'available')?.quantity);
+  if (available === null) {
+    await log({
+      type: 'quantity_unavailable',
+      notes: node.inventoryItem?.tracked === false
+        ? 'تتبّع المخزون مقفول على الـ variant ده في شوبيفاي — اتوقف قبل الكتابة (مش هنصفّر الاستوك)'
+        : 'الكمية (available) مش رقم صالح من شوبيفاي — اتوقف قبل الكتابة على WooCommerce',
+      extra: { result: 'rejected', stage: 'lookup', ...base },
+    });
+    return { done: 'rejected' };
+  }
+
+  // ── حارس الترتيب — نفس claimIfNewer بتاع الويبهوك (مفتاحه inventory_item_id) ──
+  // الطابع = وقت **بداية** قراءة الصفحة: ويبهوك اتولّد بعد القراءة (triggeredAt أحدث) بيكسب،
+  // وويبهوك أقدم من القراءة بيتتخطّى لأن القراءة أحدث منه.
+  const { claimed, previousTriggeredAt } = await claimIfNewer(env.DB, inventoryItemId, startedAt);
+  if (!claimed) {
+    await log({
+      type: 'stale_event_skipped',
+      notes: 'فيه حدث أحدث اتعالج لنفس الـ variant بعد بداية قراءة الصفحة — القراءة دي أقدم، تم التجاهل',
+      extra: { result: 'rejected', stage: 'lookup', ...base, triggeredAt: startedAt },
+    });
+    return { done: 'rejected' };
+  }
+  const release = async () => {
+    try { await releaseClaim(env.DB, inventoryItemId, startedAt, previousTriggeredAt); } catch { /* أسوأ حالة: الحدث يتخطّى */ }
+  };
+
+  return {
+    pending: {
+      variantId, inventoryItemId, sku, wordpressVariationId, quantity: available,
+      base, log, release, wasLogged: () => logged,
+    },
+  };
+}
+
+// ── §BULK-SYNC::flushStockBatch ──
+// بيبعت الـ pending على دفعات WP_BATCH_SIZE **متتالية** (فاصل WP_BATCH_GAP_MS — متوازي
+// ممنوع). بيرجّع { outcomes[] (success|warning|error|rejected|already|deferred), rateLimited, retryAfterSec }
+async function flushStockBatch(env, pendingList) {
+  const n = pendingList.length;
+  const outcomes = new Array(n).fill(null);
+  if (n === 0) return { outcomes, rateLimited: false, retryAfterSec: null };
+
+  const failUnexpected = async (p, message) => {
+    await p.log({
+      type: 'unexpected_error', notes: message,
+      extra: { result: 'error', stage: 'write', ...p.base },
+    });
+    await p.release();
+    return 'error';
+  };
+
+  try { requireEnv(env, ['WP_BASE_URL', 'WP_SYNC_SECRET']); }
+  catch (e) {
+    for (let i = 0; i < n; i++) outcomes[i] = await failUnexpected(pendingList[i], e.message || String(e));
+    return { outcomes, rateLimited: false, retryAfterSec: null };
+  }
+
+  for (let start = 0; start < n; start += WP_BATCH_SIZE) {
+    const end = Math.min(start + WP_BATCH_SIZE, n);
+    if (start > 0) await sleep(WP_BATCH_GAP_MS);
+
+    const items = [];
+    for (let i = start; i < end; i++) {
+      const p = pendingList[i];
+      items.push({
+        variation_id:  Number(p.wordpressVariationId),
+        expected_sku:  String(p.sku || ''),
+        expected_gtin: String(p.variantId),     // GTIN على ووردبريس = Shopify variant numeric ID
+        quantity:      p.quantity,
+      });
+    }
+
+    let body;
+    try {
+      body = await wcBatchUpdateStock(env, items);
+    } catch (e) {
+      if (e instanceof RateLimitError) {
+        for (let i = start; i < n; i++) {
+          const p = pendingList[i];
+          await p.log({
+            type: 'rate_limited',
+            notes: 'WordPress رفض بسبب سقف الاستضافة (429) — اتوقفت الدورة والحجز اترجّع',
+            extra: { result: 'warning', stage: 'write', ...p.base, retryAfterSec: e.retryAfterSec },
+          });
+          await p.release();
+          outcomes[i] = 'deferred';
+        }
+        return { outcomes, rateLimited: true, retryAfterSec: e.retryAfterSec };
+      }
+      // أي خطأ تاني على الدفعة كلها: unexpected_error + إرجاع الحجز، وكمّل للدفعة اللي بعدها
+      for (let i = start; i < end; i++) outcomes[i] = await failUnexpected(pendingList[i], `فشل نداء الدفعة: ${e.message || e}`);
+      continue;
+    }
+
+    for (let i = start; i < end; i++) {
+      const p = pendingList[i];
+      const item = body.results[i - start];
+      try {
+        if (!item || Number(item.variation_id) !== Number(p.wordpressVariationId)) {
+          outcomes[i] = await failUnexpected(p, 'رد الدفعة مش مطابق للمدخلات (results ناقصة أو بترتيب مختلف)');
+        } else {
+          outcomes[i] = await applyStockBatchResult(p, item);
+        }
+      } catch (e) {
+        outcomes[i] = await failUnexpected(p, e.message || String(e));
+      }
+    }
+  }
+  return { outcomes, rateLimited: false, retryAfterSec: null };
+}
+
+// ── §BULK-SYNC::applyStockBatchResult ── نتيجة item واحد من السيرفر → صف D1
+// بيرجّع واحدة من مفردات extra.result المقفولة (constants §12).
+// ⚠️ مفتاح type بيتكتب **صريح** في كل مكان (مفيش shorthand — worker-builder Step 7)
+async function applyStockBatchResult(p, item) {
+  const old = toQuantity(item.old_quantity);
+  switch (item.status) {
+    case 'updated':
+      await p.log({
+        type: 'synced',
+        delta: old !== null ? p.quantity - old : null,
+        valueBefore: old,
+        valueAfter: p.quantity,
+        notes: 'تمّت مزامنة الاستوك بنجاح (مزامنة شاملة)',
+        extra: { result: 'success', stage: 'write', ...p.base, wcResult: item },
+      });
+      // الكتابة تمّت بس السجل فشل — الواجهة لازم تعرف الفرق
+      return p.wasLogged() ? 'success' : 'warning';
+
+    case 'unchanged':
+      // 🔴 result='already' مش رفض ومش فشل: الحالة المستهدفة موجودة أصلاً.
+      //    وهي **أكتر نتيجة متوقّعة** في الشاملة — لو اتحسبت فشل، أكتر رسالة تبقى أقلها إفادة.
+      await p.log({
+        type: 'no_stock_change_skipped',
+        valueBefore: p.quantity,
+        valueAfter: p.quantity,
+        notes: 'الاستوك على WooCommerce مطابق فعلًا لشوبيفاي — السيرفر ماكتبش حاجة',
+        extra: { result: 'already', stage: 'write', ...p.base },
+      });
+      return 'already';
+
+    case 'sku_mismatch':
+      await p.log({
+        type: 'sku_mismatch',
+        notes: `SKU مختلف — Shopify: "${p.sku}" | ${item.message || 'WordPress'}`,
+        extra: { result: 'rejected', stage: 'lookup', ...p.base },
+      });
+      return 'rejected';
+    case 'gtin_mismatch':
+      await p.log({
+        type: 'gtin_mismatch',
+        notes: `GTIN لا يطابق Variant ID (متوقع: "${p.variantId}") — ${item.message || ''}`,
+        extra: { result: 'rejected', stage: 'lookup', ...p.base },
+      });
+      return 'rejected';
+    case 'not_found':
+      await p.log({
+        type: 'wp_variation_not_found',
+        notes: `WordPress Variation Id (${p.wordpressVariationId}) مش موجود على WordPress`,
+        extra: { result: 'rejected', stage: 'lookup', ...p.base },
+      });
+      return 'rejected';
+
+    case 'bad_request':
+    case 'save_failed':
+      // 🔴 error مش rejected: النداء **وصل** لـ WooCommerce واترفض/فشل (constants §12)
+      await p.log({
+        type: 'wp_update_failed',
+        valueAfter: p.quantity,
+        notes: `فشل تحديث WordPress (${item.status}): ${item.message || ''}`,
+        extra: { result: 'error', stage: 'write', ...p.base, wpStatus: item.status },
+      });
+      await p.release();
+      return 'error';
+
+    default:
+      throw new Error(`status غير معروف من السيرفر: "${item.status}"`);
+  }
+}
+
+// ── §BULK-SYNC::runBulkSyncPage ──
+async function runBulkSyncPage(env, cursor, employee = null) {
+  // 🔴 LOCATION_ID **إلزامي** للشاملة (Step 5A ⑧): غيابه في الويبهوك بيلغي الحارس بصمت،
+  //    وهنا بيخلّي الاستعلام نفسه `Location/undefined` — فبنوقف باسم المتغيّر.
+  requireEnv(env, ['SHOP_DOMAIN', 'CLIENT_ID', 'CLIENT_SECRET', 'LOCATION_ID', 'WP_BASE_URL', 'WP_SYNC_SECRET']);
+  if (!env.DB) throw new Error('متغيرات ناقصة في الـ Worker: DB (D1 binding)');
+
+  const startedAt = new Date().toISOString();   // قبل القراءة — شوف حارس الترتيب في prepareBulkVariant
+  const batchTag = `bulk_sync_${startedAt}`;
+
+  const data = await shopifyGQL(env, BULK_VARIANTS_QUERY, { cursor, loc: `gid://shopify/Location/${env.LOCATION_ID}` });
+  const queryCost = _lastQueryCost ? [{ op: 'productVariantsStock', ..._lastQueryCost }] : [];   // ⑮ للقياس بس
+  const throttleStatus = _lastThrottle;
+  const conn = data?.productVariants;
+  // الفحص التالت: شوبيفاي ردّت بـ data، بس بلا الحمولة اللي طلبناها
+  if (!conn) throw new Error('productVariants: شوبيفاي ما رجّعتش productVariants — ' + JSON.stringify(data).slice(0, 200));
+
+  let scanned = 0, linked = 0;
+  // 🔴 عدّادات النتايج — من غيرها الواجهة بتعرض «✅ خلصت» حتى لو كل الصفوف فشلت.
+  const results = { success: 0, warning: 0, error: 0, rejected: 0, already: 0 };
+  let deferred = 0;   // اتأجّلت بسبب 429 — مش error، ومش من مفردات result
+
+  const pending = [];
+  for (const edge of conn.edges) {
+    scanned++;
+    const node = edge.node;
+    // مش مربوط بـ WooCommerce — تخطي صامت (من غير صف D1) عشان منغرقش السجل بآلاف not_linked_yet
+    if (!node.metafield?.value) continue;
+    linked++;
+    const prep = await prepareBulkVariant(env, node, { batchTag, startedAt, employee });
+    if (prep.done) results[prep.done]++;
+    else pending.push(prep.pending);
+  }
+
+  const flushed = await flushStockBatch(env, pending);
+  for (const o of flushed.outcomes) {
+    if (o === 'deferred') deferred++;
+    else if (o && results[o] !== undefined) results[o]++;
+  }
+
+  const rateLimited = flushed.rateLimited;
+  return {
+    scanned, linked, results, deferred, rateLimited,
+    retryAfterSec: rateLimited ? (flushed.retryAfterSec ?? RATE_LIMIT_DEFAULT_RETRY_SEC) : null,
+    throttleStatus, queryCost,
+    // لو rateLimited: نفس cursor الصفحة دي (مش اللي بعدها) والواجهة تعيدها بعد الانتظار
+    hasMore: rateLimited ? true : conn.pageInfo.hasNextPage,
+    nextCursor: rateLimited ? (cursor || null) : conn.pageInfo.endCursor,
+    done: !rateLimited && !conn.pageInfo.hasNextPage,
+  };
 }

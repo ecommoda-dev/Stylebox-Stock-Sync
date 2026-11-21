@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!-- skills: html-builder v9.1.0 · worker-builder v4.0.0 · constants v6.0.0 · shopify-webhook-helper v1.0.0 · woocommerce-sync-helper v2.1.0 — 18-11-2026 -->
+<!-- skills: html-builder v9.1.1 · worker-builder v4.2.0 · constants v6.0.1 · shopify-webhook-helper v1.0.0 · woocommerce-sync-helper v2.2.0 · shopify-graphql-helper v3.2.0 — 21-11-2026 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>سجل مزامنة استوك WordPress — EcomModa</title>
+<title>مزامنة استوك WordPress — EcomModa</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
 
@@ -88,6 +88,20 @@ body {
 .hbtn.active-user:hover { border-color: var(--red); color: var(--red); background: var(--red-light); }
 .hbtn.warn { border-color: var(--amber); color: var(--amber); background: var(--amber-light); }
 
+/* ── Main Tabs — عرض كامل + تقسيم متساوٍ (UI Standard v2) ──── */
+.main-tabs-bar {
+  display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 6px; margin-bottom: 14px; box-shadow: var(--shadow);
+}
+.main-tab-btn {
+  flex: 1; padding: 9px 10px; border: 2px solid transparent; background: transparent;
+  border-radius: var(--radius-sm); font-family: inherit; font-size: 12px; font-weight: 600;
+  color: var(--text-secondary); cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
+}
+.main-tab-btn:hover  { background: var(--surface-2); color: var(--text-primary); }
+.main-tab-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); box-shadow: 0 2px 8px rgba(37,99,235,.25); }
+
 /* ── Settings Modal ─────────────────────────────────────────── */
 .settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 600; display: none; align-items: center; justify-content: center; padding: 20px; }
 .settings-overlay.open { display: flex; }
@@ -114,6 +128,7 @@ body {
 .eco-modal { background: var(--surface); border-radius: var(--radius); width: 90%; max-width: calc(var(--container-max) * .9); max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.18); overflow: hidden; }
 .eco-modal-hdr { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 700; background: var(--surface); flex-shrink: 0; }
 .eco-modal-body { overflow-y: auto; padding: 16px 20px; flex: 1; }
+.eco-modal-ftr  { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0; }
 
 .cl-version-block { margin-bottom: 4px; }
 .cl-version-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -394,6 +409,38 @@ body {
   transition: background .15s, border-color .15s; }
 .page-btn:hover:not(:disabled) { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
 .page-btn:disabled { opacity: .4; cursor: not-allowed; }
+/* ══════════════════════════════════════════════════════════════
+   §STYLES::bulk — تاب المزامنة الشاملة (نفس نمط Stylebox-Price-Sync)
+   ══════════════════════════════════════════════════════════════ */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; margin-bottom:14px; }
+.card h3 { font-size:14px; margin-bottom:8px; }
+.card p.hint { font-size:12px; color:var(--text-secondary); line-height:1.7; margin-bottom:12px; }
+
+.btn-primary,.btn-secondary,.btn-danger {
+  font-family:inherit; font-size:13px; font-weight:600; border-radius:var(--radius-sm);
+  padding:10px 18px; cursor:pointer; border:1.5px solid transparent; transition:all .15s;
+}
+.btn-primary { background:var(--accent); color:var(--on-accent); }
+.btn-primary:hover:not(:disabled) { background:var(--accent-dark); }
+.btn-primary:disabled { opacity:.5; cursor:not-allowed; }
+.btn-secondary { background:var(--surface-2); color:var(--text-primary); border-color:var(--border-strong); }
+.btn-secondary:hover { background:var(--border); }
+.btn-danger { background:var(--red-light); color:var(--red); border-color:var(--red-border); margin-top:10px; }
+.btn-danger:hover { background:var(--red); color:var(--on-accent); }
+/* زرار الخطر — الزرار الأساسي في نافذة التأكيد (Standards #38) */
+.btn-red { padding:9px 18px; border-radius:var(--radius-sm); border:none; background:var(--red); color:var(--on-accent); font-family:var(--font-body); font-size:13px; font-weight:700; cursor:pointer; transition:background .15s; }
+.btn-red:hover { background:var(--red-dark); }
+
+.bulk-progress-bar { height:8px; border-radius:4px; background:var(--surface-2); border:1px solid var(--border); overflow:hidden; margin-bottom:14px; }
+.bulk-progress-fill { height:100%; width:30%; background:linear-gradient(90deg,var(--accent),var(--accent-light),var(--accent)); background-size:200% 100%; animation:bulk-stripe 1.2s linear infinite; border-radius:4px; }
+@keyframes bulk-stripe { 0%{background-position:0 0;} 100%{background-position:200% 0;} }
+.bulk-stats { display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+.bulk-stats > div { flex:1; min-width:110px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px; text-align:center; }
+.bulk-stats span { display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px; }
+.bulk-stats strong { font-family:var(--font-mono); font-size:18px; color:var(--text-primary); }
+.bulk-log { font-family:var(--font-mono); font-size:12px; color:var(--text-secondary); background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:6px; }
+.bulk-done-msg { font-size:13px; font-weight:600; margin-bottom:12px; line-height:1.7; }
+
 /* ── Idle logout (§IDLE-JS) — banner + login notice ────────── */
 .idle-warn {
   display: none; position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
@@ -429,8 +476,8 @@ body {
     <div class="app-title">
       <div class="app-icon">📦</div>
       <div class="app-title-text">
-        <h1>سجل مزامنة استوك WordPress</h1>
-        <span>Shopify → WooCommerce — عرض فقط، مفيش تعديل استوك من هنا</span>
+        <h1>مزامنة استوك WordPress</h1>
+        <span>Shopify → WooCommerce — ويبهوك تلقائي + مزامنة شاملة يدوية وسجل العمليات</span>
       </div>
     </div>
     <div class="app-header-btns">
@@ -446,6 +493,15 @@ body {
   <!-- ══════════════════════════════════════════════════════════
        §TOOL — شريط الحالة + قسم السجل الموحّد
        ══════════════════════════════════════════════════════════ -->
+  <!-- Main Tabs — عرض كامل + تقسيم متساوٍ (أيقونة + نص في نفس السطر) -->
+  <div class="main-tabs-bar">
+    <button class="main-tab-btn active" id="mainTabSync" onclick="switchMainTab('sync')">📦 مزامنة الاستوك</button>
+    <button class="main-tab-btn" id="mainTabLog" onclick="switchMainTab('log')">📜 سجل العمليات</button>
+  </div>
+
+  <!-- ══ تاب ١: مزامنة الاستوك — شريط الحالة + الشرح + المزامنة الشاملة ══ -->
+  <div id="syncTabContent">
+
   <!-- ─── §TOOL::health ─── -->
   <div class="health-row" id="healthRow">
     <div class="health-card" id="hcSynced">
@@ -464,6 +520,64 @@ body {
       <span class="health-sub" id="hc24Sub">جارٍ القراءة...</span>
     </div>
   </div>
+
+  <div class="card">
+    <h3>⚙️ كيف تعمل الأداة</h3>
+    <p class="hint" style="margin-bottom:0;">
+      الـ Worker بيستقبل ويبهوك <code style="font-family:var(--font-mono);">inventory_levels/update</code> من شوبيفاي أوتوماتيك،
+      وبيزامن استوك أي variant عنده ربط بـ WooCommerce (metafield <code style="font-family:var(--font-mono);">custom.wordpress_variation_id</code>)
+      لحظة أي تغيير في المخزون. الشاشة دي مش محتاجة لتشغيل المزامنة العادية —
+      استخدمها بس للمزامنة الشاملة تحت، ولمتابعة السجل في التاب التاني.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>🔁 مزامنة شاملة (Bulk Sync)</h3>
+    <p class="hint">
+      بتمشي على كل الـ variants في شوبيفاي صفحة صفحة، وبتقرا الكمية المتاحة (<code style="font-family:var(--font-mono);">available</code>)
+      على موقع المخزن، وتزامن بس اللي عنده ربط بـ WooCommerce. استخدمها لو فيه variants اتربطت قبل ما الويبهوك يكون
+      شغّال، أو لو شكّيت إن الاستوك على الموقع مش مطابق (ويبهوك ضاع أو اتعدّل بره الأداة). ممكن تشغّلها أكتر من مرة براحتك.
+    </p>
+
+    <div id="bulkSyncIdle">
+      <button class="btn-primary" id="bulkStartBtn" onclick="startBulkSync()">▶️ ابدأ المزامنة الشاملة</button>
+    </div>
+
+    <div id="bulkSyncRunning" style="display:none;">
+      <!-- ⚠️ الشريط **غير محدّد عن قصد**: الإجمالي مش معروف مع الـ cursor pagination،
+           وتحريك نسبة مخترعة = تقدّم كذّاب. التقدّم الحقيقي في العدّادات تحت. -->
+      <div class="bulk-progress-bar"><div class="bulk-progress-fill"></div></div>
+      <div class="bulk-stats">
+        <div><span>الصفحات</span><strong id="bulkPages">0</strong></div>
+        <div><span>Variants متفحوصة</span><strong id="bulkScanned">0</strong></div>
+        <div><span>مربوطة بـ WooCommerce</span><strong id="bulkLinked">0</strong></div>
+      </div>
+      <!-- عدّادات النتايج — جاية من الـ Worker (results في رد كل صفحة). «متعمل خلاص»
+           **محايد**: مش فشل ومش تحذير (constants §12) -->
+      <div class="bulk-stats">
+        <div><span>✅ اتزامن</span><strong id="bulkResSuccess">0</strong></div>
+        <div><span>ℹ️ متعمل خلاص</span><strong id="bulkResAlready">0</strong></div>
+        <div><span>➖ مرفوض</span><strong id="bulkResRejected">0</strong></div>
+        <div><span>❌ فشل</span><strong id="bulkResError">0</strong></div>
+        <!-- ⏳ مؤجّل بسبب سقف الاستضافة (429) — **مش فشل**؛ الواجهة بتعيد نفس الصفحة بعد انتظار -->
+        <div><span>⏳ مؤجّل (سقف الاستضافة)</span><strong id="bulkResDeferred">0</strong></div>
+      </div>
+      <div class="bulk-log" id="bulkLogLine">جاري البدء…</div>
+      <button class="btn-danger" onclick="stopBulkSync()">⏹ إيقاف</button>
+    </div>
+
+    <div id="bulkSyncDone" style="display:none;">
+      <div class="bulk-done-msg" id="bulkDoneMsg"></div>
+      <!-- يظهر بس لو المزامنة وقفت (429 متكرر · إيقاف يدوي · خطأ) — بيكمّل من آخر cursor (في المتغيّرات، مش localStorage) -->
+      <button class="btn-primary" id="bulkResumeBtn" style="display:none;" onclick="resumeBulkSync()">▶️ كمّل من آخر نقطة</button>
+      <button class="btn-secondary" onclick="resetBulkSync()">إعادة تشغيل</button>
+    </div>
+  </div>
+
+  </div><!-- /#syncTabContent -->
+
+  <!-- ══ تاب ٢: سجل العمليات ══ -->
+  <div id="logTabContent" style="display:none;">
 
   <!-- ─── §TOOL::logSection — القسم الموحّد (data-table-standard.md) ─── -->
   <div class="unified-section">
@@ -600,6 +714,8 @@ body {
 
   </div><!-- /.unified-section -->
 
+  </div><!-- /#logTabContent -->
+
   <!-- ══════════════════════════════════════════════════════════
        §SETTINGS MODAL
        ══════════════════════════════════════════════════════════ -->
@@ -644,7 +760,20 @@ body {
       <div class="eco-modal-body">
         <div class="cl-version-block">
           <div class="cl-version-row">
-            <span class="cl-ver-badge" id="clLatestVerBadge">v2.1.0</span>
+            <span class="cl-ver-badge" id="clLatestVerBadge">v2.2.0</span>
+            <span class="cl-ver-date">21-11-2026</span>
+          </div>
+          <ul class="cl-items">
+            <li class="cl-item"><span class="cl-tag new">جديد</span><span>🔁 <b>مزامنة شاملة (Bulk Sync)</b>: بتمشي على كل الـ variants في شوبيفاي صفحة صفحة، وتقرا الكمية الفعلية على موقع المخزن وتزامنها مع WooCommerce. بعدّادات نتايج حقيقية (تم · متعمل خلاص · مرفوض · فشل · مؤجّل) ونافذة تأكيد بتسمّي الأثر.</span></li>
+            <li class="cl-item"><span class="cl-tag new">جديد</span><span>الشاشة بقت <b>تابين</b>: «📦 مزامنة الاستوك» (شريط الحالة + الشرح + المزامنة الشاملة) و«📜 سجل العمليات». السجل بيتحمّل أول مرة لما التاب يتفتح.</span></li>
+            <li class="cl-item"><span class="cl-tag new">جديد</span><span>سقف الاستضافة (429): أول رفض بيوقف الدورة ويرجّع الحجوزات، والواجهة بتستنى 90–150 ث وتعيد <b>نفس الصفحة</b> (لحد 3 مرات) وبعدها «كمّل من آخر نقطة». المؤجّل <b>مش فشل</b>.</span></li>
+            <li class="cl-item"><span class="cl-tag new">جديد</span><span>٣ أنواع في السجل: <code>rate_limited</code> · <code>no_stock_change_skipped</code> · <code>quantity_unavailable</code>. وكل صفوف الأداة بقى فيها <code>extra.result</code> و<code>extra.stage</code>.</span></li>
+            <li class="cl-item"><span class="cl-tag change">تغيير</span><span>الأداة <b>مابقتش قراءة فقط</b> — المزامنة الشاملة بتكتب استوك على WooCommerce (بنفس triple-check بتاع الويبهوك). <code>MIN_WORKER_VERSION</code> اترفعت لـ <code>3.2.0</code>. <b>لازم سنيپت <code>variation-stocks</code> يتلصق على الموقع قبل أول تشغيل</b> (🩺 فحص النظام بيقولك).</span></li>
+          </ul>
+        </div>
+        <div class="cl-version-block">
+          <div class="cl-version-row">
+            <span class="cl-ver-badge old">v2.1.0</span>
             <span class="cl-ver-date">18-11-2026</span>
           </div>
           <ul class="cl-items">
@@ -689,7 +818,7 @@ body {
   <div class="eco-overlay" id="aboutOverlay" onclick="if(event.target===this)closeAbout()">
     <div class="eco-modal">
       <div class="eco-modal-hdr">
-        <span>ℹ️ عن الأداة — سجل مزامنة استوك WordPress</span>
+        <span>ℹ️ عن الأداة — مزامنة استوك WordPress</span>
         <button class="modal-close-x" onclick="closeAbout()">✕</button>
       </div>
       <div class="eco-modal-body">
@@ -697,14 +826,14 @@ body {
         <details class="about-sec" open>
           <summary>📋 وصف الأداة</summary>
           <div class="about-sec-body">
-            <p><strong>الهدف:</strong> عرض سجل كل عملية مزامنة استوك تمّت (أو حاولت تتم) من Shopify إلى
-            WooCommerce على <code>stylebox.online</code>، عن طريق
-            <code>stylebox-stock-sync-worker</code>.</p>
+            <p><strong>الهدف:</strong> مزامنة استوك من Shopify إلى WooCommerce على <code>stylebox.online</code>
+            عن طريق <code>stylebox-stock-sync-worker</code> — تلقائيًا بالويبهوك، ويدويًا بالمزامنة الشاملة —
+            وعرض سجل كل عملية تمّت (أو حاولت تتم).</p>
 
             <div class="about-warn">
-              🔴 <strong>الأداة دي قراءة فقط.</strong> مفيش أي تعديل استوك بيتم من هنا — ولا يدوي ولا
-              بالضغط على أي زرار. المزامنة الفعلية بتحصل في الـ Worker لما شوبيفاي تبعت ويبهوك.
-              مفيش هنا زرار «أعد المزامنة» بقصد.
+              🔴 <strong>الأداة بقت بتكتب (من v2.2.0).</strong> زرار «المزامنة الشاملة» في تاب «مزامنة الاستوك»
+              بيكتب الكمية الفعلية من شوبيفاي على WooCommerce لكل variant مربوط. ده تغيير في عقد الأداة اللي كانت
+              «قراءة فقط»، وبيتأكد منه في نافذة تأكيد بتسمّي الأثر. باقي الشاشة (السجل · شريط الحالة) قراءة فقط.
             </div>
 
             <h4>المستخدمون</h4>
@@ -731,14 +860,25 @@ body {
               <li>الكتابة على WooCommerce، وتسجيل صف في D1 بالنتيجة — نجحت أو فشلت.</li>
             </ol>
 
+            <h4>إزاي بتشتغل المزامنة الشاملة (يدوية)</h4>
+            <ol>
+              <li>الموظف بيضغط «ابدأ المزامنة الشاملة» ويأكّد في النافذة.</li>
+              <li>الواجهة بتنده <code>bulk_sync_all</code> صفحة صفحة (٥٠ variant) بـ <code>cursor</code>.</li>
+              <li>الـ Worker بيقرا من شوبيفاي الـ <code>available</code> على <code>LOCATION_ID</code> + الـ metafield — اللي مش مربوط بيتخطّى من غير صف.</li>
+              <li>نفس حراس الويبهوك: الكمية لازم رقم صالح (مش <code>null</code> ← مش تصفير)، حارس الترتيب، وTriple-Check (SKU + GTIN) على سيرفر ووردبريس.</li>
+              <li>المربوطين بيتبعتوا على <code>variation-stocks</code> دفعات ≤٢٠ (نداء واحد لكل دفعة بدل نداءين لكل variant) والسيرفر بيرجّع نتيجة لكل variant.</li>
+              <li>لو ووردبريس رفض بـ 429 فاضي (سقف الاستضافة): الدورة بتقف، الحجوزات بترجع، والواجهة بتستنى وتعيد <b>نفس الصفحة</b>.</li>
+            </ol>
+
             <h4>الـ Endpoints اللي الصفحة دي بتناديها</h4>
             <table>
               <tr><th>الـ action</th><th>بيعمل إيه</th></tr>
               <tr><td><code>get_config</code></td><td>نسخة الـ Worker — لحارس النسخة</td></tr>
-              <tr><td><code>diag</code></td><td>فحص ذاتي بدون أي كتابة — الأسرار (أسماء وأطوال) · D1 · شوبيفاي وصلاحياته وتكلفة الاستعلام · endpoint ووردبريس</td></tr>
+              <tr><td><code>diag</code></td><td>فحص ذاتي بدون أي كتابة — الأسرار (أسماء وأطوال) · D1 · شوبيفاي وصلاحياته وتكلفة الاستعلام · endpoint ووردبريس + endpoint الدفعات</td></tr>
               <tr><td><code>get_stats</code></td><td>شريط الحالة (آخر مزامنة · آخر تسليمة · آخر ٢٤ ساعة)</td></tr>
               <tr><td><code>get_employees</code></td><td>قائمة الموظفين في شاشة الدخول</td></tr>
               <tr><td><code>check_employee</code> · <code>register_pin</code> · <code>verify_employee</code> · <code>log_logout</code></td><td>تسجيل الدخول الموحّد</td></tr>
+              <tr><td><code>bulk_sync_all</code></td><td>صفحة واحدة من المزامنة الشاملة (٥٠ variant) — بترجع <code>results</code> (٥ مفردات) · <code>deferred</code> · <code>rateLimited</code> · <code>retryAfterSec</code> · <code>nextCursor</code> · <code>done</code>. لو <code>rateLimited</code> بترجع <b>نفس cursor</b> الصفحة</td></tr>
               <tr><td><code>get_logs</code> · <code>get_logs_count</code></td><td>صفحة السجل + العدد الكلي المطابق للفلاتر</td></tr>
               <tr><td><code>get_logs_export</code></td><td>التصدير — بيرجّع <code>cap</code>/<code>total</code>/<code>truncated</code></td></tr>
             </table>
@@ -758,7 +898,9 @@ body {
               <li><code>§AUTH-JS</code> — شاشة الدخول على خطوتين (اختيار الموظف ← PIN)</li>
               <li><code>§IDLE-JS</code> — الخروج التلقائي لعدم النشاط (<code>IDLE_TIMEOUT_MIN = 60</code>) + <code>performLogout(reason)</code> (Standards #52)</li>
               <li><code>§DATETIME</code> — <code>Africa/Cairo</code> محسوبة بـ <code>Intl</code>، مش إزاحة ثابتة</li>
+              <li><code>§SHELL-JS::tabs</code> — <code>switchMainTab</code> (التابين · السجل lazy) · <code>askConfirm</code> · <code>setUpdateLock</code></li>
               <li><code>§TOOL-JS::health</code> — شريط الحالة من <code>get_stats</code></li>
+              <li><code>§TOOL-JS::bulkSync</code> — <code>startBulkSync</code> · <code>runBulkSyncLoop</code> (انتظار واستئناف تلقائي عند 429) · <code>resumeBulkSync</code> · <code>stopBulkSync</code></li>
               <li><code>§LOG-JS</code> — الفلاتر · الترتيب · الترقيم · التصدير</li>
             </ul>
 
@@ -769,7 +911,10 @@ body {
               <li><code>IDLE_TIMEOUT_MIN</code> — 60 دقيقة لكل الأدوات بلا استثناء (ممنوع تغييرها لأداة بعينها)</li>
               <li><code>WORKER_URL</code> — ثابت في الكود، مش إعداد ومش <code>localStorage</code> (Standards #28)</li>
               <li><code>LS_SECRET</code> — <code>stylebox_stock_sync_worker_secret</code> — المفتاح الوحيد المخزّن</li>
-              <li><code>LOG_TYPE_META</code> — الاسم والتصنيف اللوني لكل نوع من الخمستاشر</li>
+              <li><code>LOG_TYPE_META</code> — الاسم والتصنيف اللوني لكل نوع (١٨ نوع: الخمستاشر + <code>rate_limited</code> · <code>no_stock_change_skipped</code> · <code>quantity_unavailable</code>)</li>
+              <li><code>BULK_PAGE_HINT = 50</code> · <code>WP_BATCH_HINT = 20</code> — للعرض في نافذة التأكيد بس؛ السلطة <code>BULK_SYNC_PAGE_SIZE</code> و<code>WP_BATCH_SIZE</code> في الـ Worker</li>
+              <li><code>BULK_BACKOFF_SEC = [90, 120, 150]</code> · <code>BULK_PAGE_GAP_MS = 1500</code> — انتظار الـ 429 والفاصل بين الصفحات</li>
+              <li><code>bulkCursor / bulkPages / bulkScanned / bulkLinked / bulkResults / bulkResume</code> — حالة المزامنة الشاملة، في الذاكرة فقط (بترجع للصفر لو الصفحة اتقفلت أو الموظف خرج)</li>
             </ul>
 
             <h4>NOTES / QUIRKS</h4>
@@ -783,12 +928,35 @@ body {
               <li><strong>ضوضاء <code>not_linked_yet</code></strong> — أكتر نوع في السجل بفارق كبير.
                   معناها إن الـ variant لسه من غير <code>custom.wordpress_variation_id</code>،
                   ومش عطل في الأداة.</li>
+              <li><strong>المزامنة الشاملة بتحتاج سنيپت <code>variation-stocks</code> على ووردبريس</strong> (<code>wordpress/variation-stocks-snippet.php</code> في الريبو) — من غيره أول دفعة بتفشل برسالة صريحة، و🩺 فحص النظام بيقولك قبلها. و<code>LOCATION_ID</code> إلزامي لها.</li>
+              <li><strong>المؤجّل (⏳) مش فشل</strong> — سقف استضافة بيتعاد. والمزامنة بتتخطّى كاش «آخر قيمة» أصلاً: مفيش كاش هنا، السيرفر بيقارن بالاستوك الحقيقي وبيرجّع <code>unchanged</code>.</li>
+              <li><strong>المش مربوط بيتخطّى بدون صف</strong> في الشاملة (عشان منغرقش السجل) — <code>not_linked_yet</code> بيفضل للويبهوك.</li>
               <li>المفتاح القديم <code>stocksynclog_worker_secret</code> بيتنقل تلقائيًا مرة واحدة
                   للمفتاح الجديد، فمحدش محتاج يعيد إدخال السر.</li>
             </ul>
           </div>
         </details>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- ── نافذة تأكيد — أي فعل بيكتب على مورد حقيقي بيعدّي عليها ──
+       ⚠️ «متأكد؟» مش تأكيد — اللي بيوقّف الموظف هو **وصف الأثر بالأرقام**.
+       زرار التأكيد .btn-red (Standards #38)، وزرار الإلغاء هو الافتراضي. -->
+  <div class="eco-overlay" id="confirmOverlay" onclick="if(event.target===this)resolveConfirm(false)">
+    <div class="eco-modal" style="max-width:520px;">
+      <div class="eco-modal-hdr">
+        <span id="confirmHeader">⚠️ تأكيد التنفيذ</span>
+        <button class="modal-close-x" onclick="resolveConfirm(false)">✕</button>
+      </div>
+      <div class="eco-modal-body">
+        <p id="confirmLead" style="font-size:13.5px;font-weight:700;margin-bottom:10px;"></p>
+        <ul id="confirmLines" style="display:flex;flex-direction:column;gap:8px;padding-inline-start:18px;font-size:13px;line-height:1.7;"></ul>
+      </div>
+      <div class="eco-modal-ftr">
+        <button class="btn-modal-cancel" onclick="resolveConfirm(false)">إلغاء</button>
+        <button class="btn-red" id="confirmOkBtn" onclick="resolveConfirm(true)">تأكيد</button>
       </div>
     </div>
   </div>
@@ -813,8 +981,8 @@ body {
 
     <div class="login-top">
       <div class="login-icon">📦</div>
-      <div class="login-title">سجل مزامنة استوك WordPress</div>
-      <div class="login-desc">Shopify → WooCommerce — عرض فقط</div>
+      <div class="login-title">مزامنة استوك WordPress</div>
+      <div class="login-desc">Shopify → WooCommerce</div>
       <div class="login-sub" id="loginSub"></div>
     </div>
 
@@ -862,13 +1030,28 @@ body {
 // ══════════════════════════════════════════════════════════════
 // §CONFIG
 // ══════════════════════════════════════════════════════════════
-const TOOL_VERSION = 'v2.1.0';
+const TOOL_VERSION = 'v2.2.0';
+
+// عدد الـ variants في صفحة المزامنة الشاملة وفي نداء ووردبريس الواحد — **للعرض في نافذة
+// التأكيد بس**. السلطة الحقيقية BULK_SYNC_PAGE_SIZE و WP_BATCH_SIZE في الـ Worker؛ لو اتغيّروا
+// هناك، الرقمين دول بيبقوا وصف قديم مش سلوك غلط.
+const BULK_PAGE_HINT = 50;
+const WP_BATCH_HINT  = 20;
+
+// 🔴 استئناف المزامنة الشاملة بعد 429 (سقف الاستضافة): ننتظر ثم نعيد **نفس الـ cursor**
+//    (مش من أول الكتالوج). جدول backoff تصاعدي، وحد أقصى 3 محاولات متتالية على نفس الصفحة.
+//    النافذة بتفضى بعد ~1.5–2 دقيقة سكون (woocommerce-sync-helper Step 3.5).
+const BULK_BACKOFF_SEC = [90, 120, 150];
+// الفاصل بين صفحات bulk — متوازي ممنوع والنافذة مشتركة بين كل الـ Workers
+const BULK_PAGE_GAP_MS = 1500;
 
 // أقل نسخة Worker الواجهة دي بتشتغل معاها. الصفحة معتمدة على get_stats
-// و get_config وعلى فلاتر القوايم في get_logs — كلهم اتضافوا في Worker v3.0.0؛ و diag و sortBy/sortDir في get_logs اتضافوا في v3.1.0.
+// و get_config وعلى فلاتر القوايم في get_logs — كلهم اتضافوا في Worker v3.0.0؛ و diag و sortBy/sortDir في get_logs اتضافوا في v3.1.0؛
+// و bulk_sync_all (+ results/deferred/rateLimited/retryAfterSec/nextCursor في ردّه) اتضافوا في v3.2.0 —
+// Worker أقدم هيرجّع «action غير معروف» (400) أو يتجاهل rateLimited في صمت (429 يتحسب فشل).
 // ⚠️ صيانة: أي endpoint أو حقل جديد الصفحة تقراه → ارفع الرقم ده في نفس التسليم.
 // ⚠️ مالهاش أي علاقة بـ TOOL_VERSION — دي بتوصف أقل Worker مقبول، مش الصفحة.
-const MIN_WORKER_VERSION = '3.1.0';
+const MIN_WORKER_VERSION = '3.2.0';
 
 // الرابط ثابت مش سر ومش حقل إعدادات — html-builder Standards #28.
 // القيمة من CLAUDE.md بتاع الريبو.
@@ -1041,6 +1224,44 @@ function showWorkerStale() {
     `التحديث على ما يبدو ما نزلش. راجع Deployments و Promote في كلاودفلير.`,
     'error', 7000
   );
+}
+
+// ── §SHELL-JS::askConfirm — تأكيد بيسمّي الأثر بالأرقام ─────
+let _confirmResolve = null;
+function askConfirm({ header = '⚠️ تأكيد التنفيذ', lead = '', lines = [], okLabel = 'تأكيد' }) {
+  document.getElementById('confirmHeader').textContent = header;
+  document.getElementById('confirmLead').textContent   = lead;
+  document.getElementById('confirmLines').innerHTML    = lines
+    .map(l => `<li${l.soft ? ' style="color:var(--text-secondary);"' : ''}>${esc(l.text)}</li>`).join('');
+  document.getElementById('confirmOkBtn').textContent  = okLabel;
+  document.getElementById('confirmOverlay').classList.add('open');
+  return new Promise(res => { _confirmResolve = res; });
+}
+function resolveConfirm(v) {
+  document.getElementById('confirmOverlay').classList.remove('open');
+  if (_confirmResolve) { _confirmResolve(v); _confirmResolve = null; }
+}
+
+// ── §SHELL-JS::updateLock — قفل نقط التعديل أثناء أي عملية كتابة ──
+// ⚠️ القفل البصري لوحده مابيمنعش النداء البرمجي — فيه حارس `if (bulkRunning || isUpdating)
+//    return;` في دالة البدء كمان. (Standards #43)
+let isUpdating = false;
+function setUpdateLock(on) {
+  isUpdating = on;
+  ['bulkStartBtn', 'logExportBtn', 'activeUserBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = on;
+  });
+}
+
+// ── §SHELL-JS::tabs — تابين: مزامنة الاستوك · سجل العمليات ──
+function switchMainTab(tab) {
+  const isMain = tab === 'sync';
+  document.getElementById('mainTabSync').classList.toggle('active', isMain);
+  document.getElementById('mainTabLog').classList.toggle('active', !isMain);
+  document.getElementById('syncTabContent').style.display = isMain ? 'block' : 'none';
+  document.getElementById('logTabContent').style.display  = isMain ? 'none'  : 'block';
+  if (!isMain && !logLoaded && isConfigured() && currentEmployee) fetchLog(); // lazy load
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1354,6 +1575,10 @@ function performLogout(reason) {
   document.getElementById('logResultsCount').textContent = '—';
   document.getElementById('paginationRow').style.display = 'none';
   resetHealthCards();
+  // ── CUSTOMIZE: tool-specific reset — مفيش مزامنة شاملة شغّالة تفضل ماشية بعد الخروج ──
+  if (bulkRunning) { bulkStopRequested = true; }
+  bulkResume = { available: false, cursor: null };
+  switchMainTab('sync');
 
   document.getElementById('loginOverlay').classList.remove('hidden');
   if (reason === 'idle') showLoginNotice('تم تسجيل خروج تلقائي لعدم النشاط');
@@ -1394,7 +1619,7 @@ let   idleFastTicker    = null;   // عدّ تنازلي كل ثانية طول 
 
 // ← CUSTOMIZE: true طول ما فيه دفعة/عملية شغّالة (isUpdating / setUpdateLock)
 function isIdleBlocked() {
-  return typeof isUpdating !== 'undefined' && !!isUpdating;
+  return (typeof isUpdating !== 'undefined' && !!isUpdating) || (typeof bulkRunning !== 'undefined' && !!bulkRunning);
 }
 
 function idleMark() {
@@ -1491,12 +1716,15 @@ const LOG_TYPE_META = {
   wp_variation_not_found: { label: '❌ Variation مش موجود',  cls: 'lt-bad',     desc: 'رقم الـ variation مش موجود على ووردبريس.' },
   variant_not_found:      { label: '❌ Variant مش موجود',    cls: 'lt-bad',     desc: 'مفيش variant على شوبيفاي للـ inventory item ده.' },
   wp_update_failed:       { label: '❌ فشل تحديث WordPress', cls: 'lt-bad',     desc: 'نداء الكتابة على ووردبريس رجع خطأ.' },
-  location_skipped:       { label: '⚠️ موقع مختلف',          cls: 'lt-warn',    desc: 'الحدث من موقع غير LOCATION_ID — اتتخطى.' },
+  location_skipped:       { label: '⚠️ موقع مختلف',          cls: 'lt-warn',    desc: 'الحدث من موقع غير LOCATION_ID — أو (شاملة) الـ variant مالوش مخزون على الموقع ده — اتتخطى.' },
   stale_event_skipped:    { label: '⏭️ حدث قديم — اتخطى',    cls: 'lt-neutral', desc: 'وصل حدث أقدم من آخر واحد اتعالج لنفس الـ variant — اتتجاهل بوعي.' },
   no_triggered_at_header: { label: 'ℹ️ بلا حارس ترتيب',      cls: 'lt-neutral', desc: 'شوبيفاي ما بعتتش X-Shopify-Triggered-At — مش خطأ.' },
   empty_payload_bug:      { label: '⚠️ Payload ناقص',        cls: 'lt-warn',    desc: 'الحدث وصل من غير inventory_item_id أو من غير كمية صالحة.' },
   hmac_failed:            { label: '🔒 توقيع غلط',           cls: 'lt-bad',     desc: 'فشل التحقق من HMAC — سر التوقيع غلط أو الطلب مش من شوبيفاي.' },
   unexpected_error:       { label: '⚠️ خطأ غير متوقع',       cls: 'lt-warn',    desc: 'خطأ مش متوقّع أثناء المعالجة — التفاصيل في الملاحظات.' },
+  rate_limited:           { label: '⏳ مؤجّل — سقف الاستضافة', cls: 'lt-warn',  desc: 'المزامنة الشاملة: WordPress رفض بسبب سقف الاستضافة (429) — اتأجّل مش فشل، والشاملة بتعيد الصفحة.' },
+  no_stock_change_skipped:{ label: 'ℹ️ مطابق — مفيش تعديل',  cls: 'lt-neutral', desc: 'المزامنة الشاملة: الاستوك على ووردبريس مطابق لشوبيفاي فعلًا — مفيش حاجة اتكتبت.' },
+  quantity_unavailable:   { label: '⚠️ كمية مش متاحة',       cls: 'lt-warn',    desc: 'المزامنة الشاملة: الكمية مش رقم صالح أو تتبّع المخزون مقفول — اتوقفنا قبل الكتابة (مفيش تصفير).' },
   login:                  { label: '🔑 دخول',                cls: 'lt-neutral', desc: 'دخول موظف — مستثنى من السجل.' },
   logout:                 { label: '🚪 خروج',                cls: 'lt-neutral', desc: 'خروج موظف — مستثنى من السجل.' },
 };
@@ -1579,7 +1807,207 @@ async function loadHealth() {
 
 function refreshAll() {
   loadHealth();
-  fetchLog();
+  if (logLoaded) fetchLog();   // السجل بيتحمّل أول مرة لما التاب يتفتح (lazy)
+}
+
+// ══════════════════════════════════════════════════════════════
+// §TOOL-JS::bulkSync — مزامنة شاملة (bulk_sync_all) — صفحة صفحة
+// (نفس نمط Stylebox-Price-Sync: cursor + استئناف تلقائي عند 429 + «كمّل من آخر نقطة»)
+// ══════════════════════════════════════════════════════════════
+let bulkRunning        = false;
+let bulkStopRequested  = false;
+let bulkCursor         = null;
+let bulkPages          = 0;
+let bulkScanned        = 0;
+let bulkLinked         = 0;
+// عدّادات النتايج المجمّعة من ردود الصفحات (مفردات constants §12)
+let bulkResults        = { success: 0, warning: 0, error: 0, rejected: 0, already: 0 };
+let bulkDeferred       = 0;      // اللي لسه متأجّل بعد آخر محاولة (429) — مش من مفردات result
+let bulkWaits          = 0;      // عدد مرات الانتظار بسبب 429 في التشغيلة دي (معلومة للملخّص)
+// نقطة الاستئناف — state في متغيّر الجلسة، **مش** localStorage (يضيع مع refresh عن قصد)
+let bulkResume         = { available: false, cursor: null };
+
+async function startBulkSync() {
+  // 🔴 حارس برمجي جنب القفل البصري — القفل لوحده مابيمنعش النداء (Standards #43)
+  if (bulkRunning || isUpdating) return;
+  if (!isConfigured()) { openSettings(); return; }
+
+  // ⚠️ تأكيد **بيسمّي الأثر**، مش «متأكد؟» — الفعل بيكتب استوك على متجر حقيقي
+  const ok = await askConfirm({
+    header: '⚠️ تأكيد المزامنة الشاملة',
+    lead:   'المزامنة هتمشي على كل الكتالوج في شوبيفاي صفحة صفحة:',
+    lines: [
+      { text: `📄 ${BULK_PAGE_HINT} variant في كل صفحة، والعملية بتكمّل لحد آخر الكتالوج (ممكن تاخد كام دقيقة)` },
+      { text: `🌐 نداء واحد لووردبريس لكل ${WP_BATCH_HINT} variant مربوط (تحقق + كتابة) — الكتالوج كله ≈ ⌈عدد المربوط ÷ ${WP_BATCH_HINT}⌉ نداء` },
+      { text: '📦 كل variant مربوط بـ WooCommerce هتتقارن كميته (available على موقع المخزن) بالاستوك على stylebox.online، واللي مختلف فعلًا هيتكتب — حتى لو الكمية صفر' },
+      { text: '⚠️ أي تعديل يدوي على الاستوك في ووردبريس هيتكتب عليه برقم شوبيفاي — شوبيفاي هي المصدر', soft: true },
+      { text: 'ℹ️ اللي مش مربوط بيتخطّى بدون صف في السجل، واللي تتبّع مخزونه مقفول على شوبيفاي مابيتصفّرش', soft: true },
+      { text: '⏳ لو الموقع رفض مؤقتًا (سقف الاستضافة 429) الأداة بتستنى تلقائيًا (90–150 ث) وتكمّل من نفس الصفحة — لحد 3 محاولات، وبعدها بتوقف ومعاك زرار «كمّل من آخر نقطة»', soft: true },
+    ],
+    okLabel: 'تأكيد — ابدأ المزامنة',
+  });
+  if (!ok) return;
+
+  bulkRunning = true; bulkStopRequested = false; bulkCursor = null;
+  bulkPages = 0; bulkScanned = 0; bulkLinked = 0;
+  bulkResults = { success: 0, warning: 0, error: 0, rejected: 0, already: 0 };
+  bulkDeferred = 0; bulkWaits = 0;
+  bulkResume = { available: false, cursor: null };
+  setUpdateLock(true);
+  document.getElementById('bulkSyncIdle').style.display = 'none';
+  document.getElementById('bulkSyncDone').style.display = 'none';
+  document.getElementById('bulkSyncRunning').style.display = 'block';
+  updateBulkStats();
+  document.getElementById('bulkLogLine').textContent = 'جاري البدء…';
+  runBulkSyncLoop();
+}
+
+// «كمّل من آخر نقطة» — نفس العدّادات ونفس الـ cursor، من غير إعادة من أول الكتالوج
+function resumeBulkSync() {
+  if (bulkRunning || isUpdating || !bulkResume.available) return;
+  bulkRunning = true; bulkStopRequested = false;
+  bulkCursor = bulkResume.cursor;
+  bulkResume = { available: false, cursor: null };
+  setUpdateLock(true);
+  document.getElementById('bulkSyncDone').style.display = 'none';
+  document.getElementById('bulkSyncRunning').style.display = 'block';
+  updateBulkStats();
+  document.getElementById('bulkLogLine').textContent = 'بيكمّل من آخر نقطة…';
+  runBulkSyncLoop();
+}
+
+// انتظار بعدّاد تنازلي — بيتقطع فورًا لو الموظف داس «إيقاف»
+async function bulkCountdown(totalSec, prefix) {
+  for (let left = totalSec; left > 0; left--) {
+    if (bulkStopRequested) return false;
+    document.getElementById('bulkLogLine').textContent = `${prefix} — هستنى ${left} ثانية وأكمّل من نفس المكان…`;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  return !bulkStopRequested;
+}
+
+function stopBulkSync() {
+  bulkStopRequested = true;
+  document.getElementById('bulkLogLine').textContent = 'بيتوقف بعد الصفحة الحالية…';
+}
+
+async function runBulkSyncLoop() {
+  let rlStreak = 0;   // محاولات 429 المتتالية على نفس الصفحة
+  try {
+    while (true) {
+      if (bulkStopRequested) {
+        bulkResume = { available: true, cursor: bulkCursor };
+        finishBulkSync(`⏹ اتوقفت يدويًا بعد ${bulkPages} صفحة. ` + bulkSummary(), bulkResults.error > 0, { resumable: true });
+        return;
+      }
+      const params = { employee: currentEmployee ? currentEmployee.username : '' };
+      if (bulkCursor) params.cursor = bulkCursor;
+      const res = await apiGet('bulk_sync_all', params);
+      if (!res.ok) throw new Error(res.error || 'الـ Worker رجّع خطأ');
+
+      // نتايج الصفحة — من الـ Worker، مش مستنتجة من غياب الخطأ.
+      // اللي اتعالج قبل الـ429 جوّه الصفحة حقيقي ومتحسوب.
+      if (res.results) {
+        for (const k of Object.keys(bulkResults)) bulkResults[k] += res.results[k] || 0;
+      }
+
+      if (res.rateLimited) {
+        // 🔴 429 = سقف الاستضافة، مش فشل: الـ Worker وقف الدورة ورجّع الحجوزات،
+        //    و nextCursor = نفس cursor الصفحة دي. بنستنى ونعيد **نفس الصفحة** بالظبط.
+        //    scanned/linked/pages مابتتحسبش — الصفحة هتتعاد وتتحسب مرة واحدة.
+        bulkDeferred = res.deferred || 0;
+        bulkCursor = res.nextCursor || null;
+        updateBulkStats();
+        if (rlStreak >= BULK_BACKOFF_SEC.length) {
+          bulkResume = { available: true, cursor: bulkCursor };
+          finishBulkSync(`⏸ اتوقفت عند الصفحة ${bulkPages + 1} — ووردبريس لسه رافض (سقف الاستضافة) بعد ${BULK_BACKOFF_SEC.length} محاولات. `
+            + `مفيش فشل: ${bulkDeferred.toLocaleString('en-US')} variant مؤجّلين، وتقدر تكمّل من نفس النقطة بعد دقيقتين. ` + bulkSummary(), false, { resumable: true, paused: true });
+          return;
+        }
+        const waitSec = Math.max(Number(res.retryAfterSec) || 0, BULK_BACKOFF_SEC[rlStreak]);
+        rlStreak++; bulkWaits++;
+        await bulkCountdown(waitSec, `⏳ ووردبريس رفض مؤقتًا (سقف الاستضافة) — محاولة ${rlStreak} من ${BULK_BACKOFF_SEC.length}`);
+        continue;   // لو الإيقاف اتطلب، أول الحلقة بتتصرف
+      }
+
+      rlStreak = 0;
+      bulkDeferred = 0;
+      bulkPages++;
+      bulkScanned += res.scanned || 0;
+      bulkLinked  += res.linked  || 0;
+      bulkCursor  = res.nextCursor || null;
+      updateBulkStats();
+      document.getElementById('bulkLogLine').textContent =
+        `صفحة ${bulkPages}: اتفحص ${res.scanned} variant، منهم ${res.linked} مربوط بـ WooCommerce.`;
+
+      if (!res.hasMore) { finishBulkSync(bulkSummary(), bulkResults.error > 0); return; }
+      await new Promise(r => setTimeout(r, BULK_PAGE_GAP_MS)); // فاصل بين الصفحات — النافذة مشتركة مع باقي الـ Workers
+    }
+  } catch (e) {
+    // ⚠️ الرسالة بتقول إن اللي اتعمل **اتعمل فعلاً** — مش «العملية فشلت».
+    // الاستئناف متاح من نفس الـ cursor (الصفحة اللي فشلت هتتعاد، والمطابق بيرجع already).
+    bulkResume = { available: true, cursor: bulkCursor };
+    finishBulkSync(`⚠️ توقفت بسبب خطأ: ${e.message} — اللي اتزامن قبل التوقف اتزامن فعلاً. `
+      + bulkSummary() + ' تقدر تكمّل من آخر نقطة.', true, { resumable: true });
+  }
+}
+
+function updateBulkStats() {
+  const n = (v) => v.toLocaleString('en-US');
+  document.getElementById('bulkPages').textContent   = n(bulkPages);
+  document.getElementById('bulkScanned').textContent = n(bulkScanned);
+  document.getElementById('bulkLinked').textContent  = n(bulkLinked);
+  document.getElementById('bulkResSuccess').textContent  = n(bulkResults.success);
+  document.getElementById('bulkResAlready').textContent  = n(bulkResults.already);
+  document.getElementById('bulkResRejected').textContent = n(bulkResults.rejected);
+  document.getElementById('bulkResError').textContent    = n(bulkResults.error + bulkResults.warning);
+  document.getElementById('bulkResDeferred').textContent = n(bulkDeferred);
+}
+
+// ملخّص بيقول **إيه اللي حصل فعلاً** — مش «خلصت» وبس
+function bulkSummary() {
+  const r = bulkResults;
+  const n = (v) => v.toLocaleString('en-US');
+  let msg = `اتفحص ${n(bulkScanned)} variant على ${n(bulkPages)} صفحة، منهم ${n(bulkLinked)} مربوط بـ WooCommerce.`;
+  msg += ` النتيجة: تم ${n(r.success)} ✅ · متعمل خلاص ${n(r.already)} ℹ️ · مرفوض ${n(r.rejected)} ➖`;
+  if (r.warning) msg += ` · تم جزئيًا ${n(r.warning)} ⚠`;
+  msg += ` · فشل ${n(r.error)} ✗`;
+  // ⏳ المؤجّل بسبب 429 **مش فشل** — بيتعدّ لوحده، وبيتحسب مؤجّل فقط لو لسه ما اتكمّلش
+  if (bulkDeferred) msg += ` · مؤجّل (سقف الاستضافة) ${n(bulkDeferred)} ⏳`;
+  msg += '.';
+  if (bulkWaits) msg += ` استنت تلقائيًا ${n(bulkWaits)} مرة بسبب سقف الاستضافة.`;
+  if (r.error || r.rejected) msg += ' راجع تاب السجل للتفاصيل سطر بسطر.';
+  return msg;
+}
+
+function finishBulkSync(msg, isError, opts = {}) {
+  bulkRunning = false;
+  setUpdateLock(false);
+  document.getElementById('bulkResumeBtn').style.display = (opts.resumable && bulkResume.available) ? '' : 'none';
+  document.getElementById('bulkSyncRunning').style.display = 'none';
+  document.getElementById('bulkSyncDone').style.display = 'block';
+  const doneMsg = document.getElementById('bulkDoneMsg');
+  doneMsg.textContent = msg;
+  doneMsg.style.color = isError ? 'var(--red)' : 'var(--green)';
+  if (opts.paused) {
+    showToast('المزامنة اتوقفت مؤقتًا بسبب سقف الاستضافة — كمّل من آخر نقطة بعد دقيقتين', 'warning', 8000);
+  } else if (isError) {
+    showToast(`المزامنة خلصت وفيها ${bulkResults.error.toLocaleString('en-US')} فشل — راجع السجل`, 'error', 7000);
+    playBeep('error');
+  } else if (bulkResults.warning) {
+    showToast(`المزامنة خلصت وفيها ${bulkResults.warning.toLocaleString('en-US')} تحذير — راجع السجل`, 'warning', 6000);
+  } else {
+    showToast('المزامنة الشاملة خلصت ✓', 'success');
+  }
+  // شريط الحالة والسجل بقى فيهم صفوف جديدة
+  loadHealth();
+  if (logLoaded) { logCurrentPage = 1; fetchLog(); }
+}
+
+function resetBulkSync() {
+  bulkResume = { available: false, cursor: null };
+  document.getElementById('bulkSyncDone').style.display = 'none';
+  document.getElementById('bulkSyncIdle').style.display = 'block';
 }
 
 // ══════════════════════════════════════════════════════════════

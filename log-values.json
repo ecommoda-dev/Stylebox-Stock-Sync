@@ -1,6 +1,9 @@
 {
   "tool": "wp_stock_sync",
-  "since": null,
+  "since": "index.js v3.2.0",
+  "logAnchors": [
+    "log"
+  ],
   "types": {
     "login": {
       "result": null,
@@ -13,69 +16,87 @@
       "desc": "خروج موظف"
     },
     "empty_payload_bug": {
-      "result": null,
-      "stage": null,
+      "result": "rejected",
+      "stage": "lookup",
       "desc": "Payload فاضي أو available غير صالحة من Shopify (بج API 2026-01)"
     },
     "gtin_mismatch": {
-      "result": null,
-      "stage": null,
+      "result": "rejected",
+      "stage": "lookup",
       "desc": "GTIN على ووردبريس لا يطابق Variant ID"
     },
     "hmac_failed": {
-      "result": null,
-      "stage": null,
+      "result": "error",
+      "stage": "lookup",
       "desc": "فشل التحقق من HMAC — CLIENT_SECRET والقديم ما طابقوش"
     },
     "location_skipped": {
-      "result": null,
-      "stage": null,
-      "desc": "location_id مختلف عن LOCATION_ID المتوقع"
+      "result": "rejected",
+      "stage": "lookup",
+      "desc": "الحدث من موقع غير LOCATION_ID — أو (في المزامنة الشاملة) الـ variant مالوش inventoryLevel على الموقع"
     },
     "no_triggered_at_header": {
       "result": null,
-      "stage": null,
-      "desc": "X-Shopify-Triggered-At ناقص — اتنفّذ من غير ordering guard"
+      "stage": "lookup",
+      "desc": "معلوماتي — X-Shopify-Triggered-At ناقص، اتنفّذ من غير ordering guard. مالوش extra.result، والعملية بتكمّل وبتكتب صفها الكامل بعده (Step 5A ⑭ الاستثناء الوحيد)"
     },
     "not_linked_yet": {
-      "result": null,
-      "stage": null,
+      "result": "rejected",
+      "stage": "lookup",
       "desc": "الـ variant لسه من غير WordPress Variation Id metafield"
     },
     "sku_mismatch": {
-      "result": null,
-      "stage": null,
+      "result": "rejected",
+      "stage": "lookup",
       "desc": "SKU مختلف بين شوبيفاي وووردبريس"
     },
     "stale_event_skipped": {
-      "result": null,
-      "stage": null,
+      "result": "rejected",
+      "stage": "lookup",
       "desc": "حدث أقدم من آخر حدث اتعالج لنفس الـ variant — اتجاهل"
     },
     "synced": {
-      "result": null,
-      "stage": null,
-      "desc": "الاستوك اتكتب على ووكومرس"
+      "result": "success",
+      "stage": "write",
+      "desc": "الاستوك اتكتب على ووكومرس (ويبهوك أو مزامنة شاملة)"
     },
     "unexpected_error": {
-      "result": null,
-      "stage": null,
+      "result": "error",
+      "stage": [
+        "lookup",
+        "write"
+      ],
       "desc": "استثناء غير متوقع أثناء معالجة الويبهوك"
     },
     "variant_not_found": {
-      "result": null,
-      "stage": null,
+      "result": "rejected",
+      "stage": "lookup",
       "desc": "مفيش variant مرتبط بالـ inventory_item_id على شوبيفاي"
     },
     "wp_update_failed": {
-      "result": null,
-      "stage": null,
-      "desc": "نداء تحديث ووردبريس فشل"
+      "result": "error",
+      "stage": "write",
+      "desc": "نداء تحديث ووردبريس وصل واترفض أو فشل (الويبهوك: خطأ النداء — الشاملة: bad_request أو save_failed من endpoint الدفعات)"
     },
     "wp_variation_not_found": {
-      "result": null,
-      "stage": null,
+      "result": "rejected",
+      "stage": "lookup",
       "desc": "WordPress Variation Id مش موجود على ووردبريس"
+    },
+    "rate_limited": {
+      "result": "warning",
+      "stage": "write",
+      "desc": "WordPress رفض بسبب سقف الاستضافة 429 (جسم فاضي) في المزامنة الشاملة — اتوقفت الدورة والحجز اترجّع. صف لكل variant ما اتبعتش، والتحديث بيتأجّل مش بيفشل"
+    },
+    "no_stock_change_skipped": {
+      "result": "already",
+      "stage": "write",
+      "desc": "المزامنة الشاملة: الاستوك على WooCommerce مطابق فعلًا لشوبيفاي — السيرفر ماكتبش حاجة"
+    },
+    "quantity_unavailable": {
+      "result": "rejected",
+      "stage": "lookup",
+      "desc": "المزامنة الشاملة: الكمية مش رقم صالح أو تتبّع المخزون مقفول على الـ variant — اتوقف قبل الكتابة (مفيش تصفير)"
     }
   }
 }
