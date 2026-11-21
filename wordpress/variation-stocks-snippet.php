@@ -10,8 +10,8 @@
 //    متمسحش القديمة ولا $permission_check.
 //    لو اتلصق برّه الـ closure ده، $permission_check مش معرّف → الـ route بيرد 401 دايمًا
 //    (fail-closed — مفيش وضع بيفتح من غير سر).
-// ⚠️ لو متغيّر الحماية في الـ closure عندك بيتسمّى حاجة غير $permission_check، غيّر الاسم
-//    في السطر اللي تحت — راجعه بعينك قبل اللصق (ماقدرتش أشوف كود السنيپت الحالي من الريبو).
+// ✅ اتأكد (21-11-2026) من سنيپت «Variation Stock Sync API» الحالي: $permission_check موجود بنفس الاسم
+//    وبيفحص X-EcomModa-Secret مقابل EC_STOCK_SYNC_SECRET.
 // ⚠️ مفيش سر في الملف ده.
 //
 // العقد:
@@ -120,6 +120,7 @@ register_rest_route( 'ecommoda/v1', '/variation-stocks', array(
                 // 5) كتابة WC CRUD — حالة المخزون (instock/outofstock) بتتحسب من الكمية في save()
                 $v->set_manage_stock( true );
                 $v->set_stock_quantity( $qty );
+                $v->set_stock_status( $qty > 0 ? 'instock' : 'outofstock' );   // نفس سلوك POST variation-stock/{id} القديم
                 $v->save();
 
                 $row['status']       = 'updated';

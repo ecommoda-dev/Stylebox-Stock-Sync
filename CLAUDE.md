@@ -192,9 +192,8 @@ wp_stock_sync_state (inventory_item_id TEXT PRIMARY KEY, last_triggered_at TEXT,
 ### 🔴 ترتيب النشر — اللي لازم يتعمل **بالترتيب**
 
 1. **الصق `wordpress/variation-stocks-snippet.php` على ووردبريس الأول** (WPCode → `EcomModa – MCP Abilities`، **جوّه نفس** `rest_api_init` بتاع route
-   `variation-stock/{id}`، من غير `<?php`). ⚠️ السنيپت بيعتمد على `$permission_check` — **راجع بعينك** إن اسم المتغيّر ده هو اللي بيفحص
-   `X-EcomModa-Secret` في الـ closure الحالي (ماقدرتش أشوف كود ووردبريس من الجلسة دي). لو الاسم مختلف، غيّره في سطر `permission_callback` — ولو اتنسى
-   الـ route بيرد 401 دايمًا (fail-closed).
+   `variation-stock/{id}`، من غير `<?php`). ✅ السنيپت بيعتمد على `$permission_check` — اتأكد (21-11-2026) من كود «Variation Stock Sync API» الحالي إنه موجود بنفس الاسم وبيفحص `X-EcomModa-Secret`.
+   ولو اتلصق برّه الـ closure الـ route بيرد 401 دايمًا (fail-closed).
 2. بعدين نشر الـ Worker (push على `main`) والواجهة.
 3. 🩺 فحص النظام → لازم يطلع `WooCommerce batch endpoint ✅ (400)` و`LOCATION_ID` مضبوط.
 4. شغّل شاملة **صفحة واحدة الأول** (إيقاف بعد أول صفحة) وراجع الصفوف في D1، وبعدين الكاملة.
@@ -431,7 +430,7 @@ index.html نفس الـ blob SHA بتاع Index.html القديم في commit e
 آخر مطابقة: 21-11-2026 · `index.js` v3.2.0 · `index.html` v2.2.0
 
 🔴 معلّقة:
-- 🔴 **سنيپت `variation-stocks` لسه ما اتلصقش على ووردبريس** (الريبو فيه الملف: `wordpress/variation-stocks-snippet.php`). من غيره المزامنة الشاملة بتفشل بأول دفعة برسالة صريحة ⇒ **يتلصق قبل أول تشغيل** (ترتيب النشر فوق). وراجع اسم `$permission_check` في الـ closure الحالي.
+- 🔴 **سنيپت `variation-stocks` لسه ما اتلصقش على ووردبريس** (الريبو فيه الملف: `wordpress/variation-stocks-snippet.php`). من غيره المزامنة الشاملة بتفشل بأول دفعة برسالة صريحة ⇒ **يتلصق قبل أول تشغيل** (ترتيب النشر فوق).
 - ⚠️ **تكلفة استعلام الشاملة على شوبيفاي مقدّرة مش مقيسة** (~٥ نقط/variant ⇒ ~٢٥٠ للصفحة، أقل من ٧٠٠). أول تشغيل بيرجّع `queryCost` و`throttleStatus` في الرد — لو `actualQueryCost` طلع أعلى بكتير، `BULK_SYNC_PAGE_SIZE = floor(700 ÷ التكلفة للـ variant)` (والاستعلام نفسه اتجرّب على Shopify MCP/`2026-10` وصالح).
 - ⚠️ **اختبار حي بعد النشر (v3.2.0):** 🩺 فحص النظام ← `WooCommerce batch endpoint ✅` ← شاملة صفحة واحدة ← صف `synced` + مطابقة الكمية على الموقع ← الكاملة. وارجع للاستعلام فوق. ماتشغّلش شاملة الأسعار والاستوك في نفس الوقت (نافذة 429 مشتركة).
 - 🟡 **الاستوك السالب** يتبعت زي ما هو (ويبهوك وشاملة) — لو عايزه يتقفل عند صفر، قرار منتج.
